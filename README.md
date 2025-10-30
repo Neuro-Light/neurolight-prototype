@@ -59,7 +59,7 @@ A powerful PySide6 desktop application for processing and analyzing large TIF im
 ## 📁 Project Structure
 
 ```
-neurolight/
+neurolight-prototype/
 │
 ├── 📄 README.md
 ├── 📄 requirements.txt
