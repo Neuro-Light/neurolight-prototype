@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# App data
+experiments/*
+!experiments/.gitkeep
+~/.neurolight/
+
+# Logs
+logs/
+*.log
+
