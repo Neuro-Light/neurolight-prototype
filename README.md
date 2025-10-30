@@ -27,7 +27,7 @@ A powerful PySide6 desktop application for processing and analyzing large TIF im
 1. **Clone or download the project**
    ```bash
    git clone https://github.com/Neuro-Light/neurolight-prototype
-   cd neurolight
+   cd neurolight-prototype
    ```
 
 2. **Create a virtual environment**
