@@ -43,6 +43,35 @@ class ImageStackHandler:
         with Image.open(self.files[index]) as img:
             return np.array(img)
 
+    def get_all_frames_as_array(self) -> Optional[np.ndarray]:
+        """Load all frames as a 3D numpy array (frames, height, width).
+        Reuses approach from Jupyter notebook.
+        Preserves original image dtype to avoid precision loss (consistent with get_image_at_index).
+        """
+        if not self.files:
+            return None
+        frame_list = []
+        for file_path in self.files:
+            with Image.open(file_path) as img:
+                # Use np.array(img) directly to preserve dtype (consistent with get_image_at_index)
+                pixels = np.array(img)
+                
+                # Handle different image modes
+                if pixels.ndim == 2:  # Grayscale (mode 'L')
+                    # Already in correct shape (height, width)
+                    pass
+                elif pixels.ndim == 3:  # Color image (RGB, RGBA, etc.)
+                    # Convert to grayscale by taking mean of color channels
+                    # Preserve dtype during conversion
+                    pixels = pixels.mean(axis=2)
+                else:
+                    # Fallback: try to reshape if needed
+                    if img.mode == 'L':  # Grayscale
+                        pixels = pixels.reshape(img.size[1], img.size[0])
+                
+                frame_list.append(pixels)
+        return np.array(frame_list)
+
     def associate_with_experiment(self, experiment: Experiment) -> None:
         self._experiment = experiment
         if experiment:

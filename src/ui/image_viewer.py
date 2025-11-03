@@ -5,9 +5,16 @@ from typing import Optional
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import QLabel, QSlider, QVBoxLayout, QWidget, QPushButton, QHBoxLayout
+from PySide6.QtCore import Qt, Signal, QRect, QPoint
+from PySide6.QtGui import QImage, QPixmap, QPainter, QPen
+from PySide6.QtWidgets import (
+    QLabel,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+    QPushButton,
+    QHBoxLayout,
+)
 
 from utils.file_handler import ImageStackHandler
 
@@ -34,20 +41,34 @@ class _LRUCache:
 
 class ImageViewer(QWidget):
     stackLoaded = Signal(str)
+    roiSelected = Signal(int, int, int, int)  # x, y, width, height
+
     def __init__(self, handler: ImageStackHandler) -> None:
         super().__init__()
         self.handler = handler
         self.index = 0
         self.cache = _LRUCache(20)
 
+        # ROI selection state
+        self.roi_selection_mode = False
+        self.roi_start_point = None
+        self.roi_end_point = None
+        self.current_roi = None
+
         self.image_label = QLabel("Drop TIF files or open a folder…")
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setMinimumSize(320, 240)
+        self.image_label.setMouseTracking(True)
+        self.image_label.mousePressEvent = self._on_mouse_press
+        self.image_label.mouseMoveEvent = self._on_mouse_move
+        self.image_label.mouseReleaseEvent = self._on_mouse_release
 
         self.prev_btn = QPushButton("Previous")
         self.next_btn = QPushButton("Next")
+        self.roi_btn = QPushButton("Select ROI")
         self.prev_btn.clicked.connect(self.prev_image)
         self.next_btn.clicked.connect(self.next_image)
+        self.roi_btn.clicked.connect(self._toggle_roi_mode)
 
         self.slider = QSlider(Qt.Horizontal)
         self.slider.valueChanged.connect(self._on_slider)
@@ -55,6 +76,7 @@ class ImageViewer(QWidget):
         nav = QHBoxLayout()
         nav.addWidget(self.prev_btn)
         nav.addWidget(self.next_btn)
+        nav.addWidget(self.roi_btn)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.image_label)
@@ -99,7 +121,11 @@ class ImageViewer(QWidget):
     def _numpy_to_qimage(self, arr: np.ndarray) -> QImage:
         if arr.ndim == 2:
             h, w = arr.shape
-            fmt = QImage.Format_Grayscale8 if arr.dtype != np.uint16 else QImage.Format_Grayscale16
+            fmt = (
+                QImage.Format_Grayscale8
+                if arr.dtype != np.uint16
+                else QImage.Format_Grayscale16
+            )
             bytes_per_line = arr.strides[0]
             return QImage(arr.data, w, h, bytes_per_line, fmt)
         if arr.ndim == 3:
@@ -121,7 +147,97 @@ class ImageViewer(QWidget):
             self.cache.set(self.index, img)
         qimg = self._numpy_to_qimage(img)
         pix = QPixmap.fromImage(qimg)
-        self.image_label.setPixmap(pix.scaled(self.image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        scaled_pix = pix.scaled(
+            self.image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+
+        # Draw ROI selection rectangle if in selection mode
+        if (
+            self.roi_selection_mode
+            and self.roi_start_point is not None
+            and self.roi_end_point is not None
+        ):
+            painter = QPainter(scaled_pix)
+            pen = QPen(Qt.red, 2, Qt.DashLine)
+            painter.setPen(pen)
+
+            if img.ndim >= 2:
+                original_height, original_width = img.shape[0], img.shape[1]
+                scaled_size = scaled_pix.size()
+                label_size = self.image_label.size()
+
+                # Calculate aspect ratio scaling
+                label_aspect = label_size.width() / label_size.height()
+                original_aspect = original_width / original_height
+
+                if label_aspect > original_aspect:
+                    scale = scaled_size.height() / original_height
+                else:
+                    scale = scaled_size.width() / original_width
+
+                # Convert ROI coordinates to scaled display coordinates
+                x1 = min(self.roi_start_point.x(), self.roi_end_point.x())
+                y1 = min(self.roi_start_point.y(), self.roi_end_point.y())
+                x2 = max(self.roi_start_point.x(), self.roi_end_point.x())
+                y2 = max(self.roi_start_point.y(), self.roi_end_point.y())
+
+                x1_scaled = int(x1 * scale)
+                y1_scaled = int(y1 * scale)
+                w_scaled = int((x2 - x1) * scale)
+                h_scaled = int((y2 - y1) * scale)
+
+                # Account for centering offset
+                offset_x = (label_size.width() - scaled_size.width()) / 2
+                offset_y = (label_size.height() - scaled_size.height()) / 2
+
+                painter.drawRect(
+                    int(x1_scaled + offset_x),
+                    int(y1_scaled + offset_y),
+                    w_scaled,
+                    h_scaled,
+                )
+            painter.end()
+
+        # Draw saved ROI if not in selection mode
+        elif self.current_roi is not None and not self.roi_selection_mode:
+            painter = QPainter(scaled_pix)
+            pen = QPen(Qt.green, 2, Qt.SolidLine)
+            painter.setPen(pen)
+
+            # Get original image dimensions
+            if img.ndim >= 2:
+                original_height, original_width = img.shape[0], img.shape[1]
+                scaled_size = scaled_pix.size()
+                label_size = self.image_label.size()
+
+                # Calculate aspect ratio scaling
+                label_aspect = label_size.width() / label_size.height()
+                original_aspect = original_width / original_height
+
+                if label_aspect > original_aspect:
+                    scale = scaled_size.height() / original_height
+                else:
+                    scale = scaled_size.width() / original_width
+
+                x, y, w, h = self.current_roi
+                x_scaled = int(x * scale)
+                y_scaled = int(y * scale)
+                w_scaled = int(w * scale)
+                h_scaled = int(h * scale)
+
+                # Account for centering offset
+                offset_x = (label_size.width() - scaled_size.width()) / 2
+                offset_y = (label_size.height() - scaled_size.height()) / 2
+
+                painter.drawRect(
+                    int(x_scaled + offset_x),
+                    int(y_scaled + offset_y),
+                    w_scaled,
+                    h_scaled,
+                )
+            painter.end()
+
+        self.image_label.setPixmap(scaled_pix)
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
@@ -147,3 +263,170 @@ class ImageViewer(QWidget):
         self.index = value
         self._show_current()
 
+    def _toggle_roi_mode(self) -> None:
+        """Toggle ROI selection mode."""
+        self.roi_selection_mode = not self.roi_selection_mode
+        self.roi_btn.setText("Cancel ROI" if self.roi_selection_mode else "Select ROI")
+        if not self.roi_selection_mode:
+            self.roi_start_point = None
+            self.roi_end_point = None
+            self.current_roi = None
+            self._show_current()
+
+    def _on_mouse_press(self, event) -> None:
+        """Handle mouse press for ROI selection."""
+        if self.roi_selection_mode and event.button() == Qt.LeftButton:
+            # Get the actual image dimensions
+            img = self.cache.get(self.index)
+            if img is None:
+                img = self.handler.get_image_at_index(self.index)
+            if img is not None and img.ndim >= 2:
+                original_height, original_width = img.shape[0], img.shape[1]
+
+                # Get label and scaled pixmap sizes
+                label_size = self.image_label.size()
+                pixmap = self.image_label.pixmap()
+                if pixmap:
+                    scaled_pixmap_size = pixmap.size()
+
+                    # Calculate aspect ratio scaling
+                    label_aspect = label_size.width() / label_size.height()
+                    original_aspect = original_width / original_height
+
+                    # Determine actual scaled dimensions (with aspect ratio preserved)
+                    if label_aspect > original_aspect:
+                        # Label is wider - height determines scale
+                        scale = scaled_pixmap_size.height() / original_height
+                    else:
+                        # Label is taller - width determines scale
+                        scale = scaled_pixmap_size.width() / original_width
+
+                    # Get mouse position relative to label
+                    mouse_x = event.position().x()
+                    mouse_y = event.position().y()
+
+                    # Account for centering if image doesn't fill entire label
+                    offset_x = (label_size.width() - scaled_pixmap_size.width()) / 2
+                    offset_y = (label_size.height() - scaled_pixmap_size.height()) / 2
+
+                    # Convert to original image coordinates
+                    x = int((mouse_x - offset_x) / scale)
+                    y = int((mouse_y - offset_y) / scale)
+
+                    # Clamp to image bounds
+                    x = max(0, min(original_width - 1, x))
+                    y = max(0, min(original_height - 1, y))
+
+                    self.roi_start_point = QPoint(x, y)
+                    self.roi_end_point = QPoint(x, y)
+
+    def _on_mouse_move(self, event) -> None:
+        """Handle mouse move for ROI selection."""
+        if self.roi_selection_mode and self.roi_start_point is not None:
+            img = self.cache.get(self.index)
+            if img is None:
+                img = self.handler.get_image_at_index(self.index)
+            if img is not None and img.ndim >= 2:
+                original_height, original_width = img.shape[0], img.shape[1]
+
+                label_size = self.image_label.size()
+                pixmap = self.image_label.pixmap()
+                if pixmap:
+                    scaled_pixmap_size = pixmap.size()
+
+                    # Calculate aspect ratio scaling
+                    label_aspect = label_size.width() / label_size.height()
+                    original_aspect = original_width / original_height
+
+                    if label_aspect > original_aspect:
+                        scale = scaled_pixmap_size.height() / original_height
+                    else:
+                        scale = scaled_pixmap_size.width() / original_width
+
+                    mouse_x = event.position().x()
+                    mouse_y = event.position().y()
+
+                    offset_x = (label_size.width() - scaled_pixmap_size.width()) / 2
+                    offset_y = (label_size.height() - scaled_pixmap_size.height()) / 2
+
+                    x = int((mouse_x - offset_x) / scale)
+                    y = int((mouse_y - offset_y) / scale)
+
+                    # Clamp to image bounds
+                    x = max(0, min(original_width - 1, x))
+                    y = max(0, min(original_height - 1, y))
+
+                    self.roi_end_point = QPoint(x, y)
+                    self._show_current()
+
+    def _on_mouse_release(self, event) -> None:
+        """Handle mouse release for ROI selection."""
+        if (
+            self.roi_selection_mode
+            and event.button() == Qt.LeftButton
+            and self.roi_start_point is not None
+        ):
+            img = self.cache.get(self.index)
+            if img is None:
+                img = self.handler.get_image_at_index(self.index)
+            if img is not None and img.ndim >= 2:
+                original_height, original_width = img.shape[0], img.shape[1]
+
+                label_size = self.image_label.size()
+                pixmap = self.image_label.pixmap()
+                if pixmap:
+                    scaled_pixmap_size = pixmap.size()
+
+                    # Calculate aspect ratio scaling
+                    label_aspect = label_size.width() / label_size.height()
+                    original_aspect = original_width / original_height
+
+                    if label_aspect > original_aspect:
+                        scale = scaled_pixmap_size.height() / original_height
+                    else:
+                        scale = scaled_pixmap_size.width() / original_width
+
+                    mouse_x = event.position().x()
+                    mouse_y = event.position().y()
+
+                    offset_x = (label_size.width() - scaled_pixmap_size.width()) / 2
+                    offset_y = (label_size.height() - scaled_pixmap_size.height()) / 2
+
+                    x = int((mouse_x - offset_x) / scale)
+                    y = int((mouse_y - offset_y) / scale)
+
+                    # Clamp to image bounds
+                    x = max(0, min(original_width - 1, x))
+                    y = max(0, min(original_height - 1, y))
+
+                    self.roi_end_point = QPoint(x, y)
+
+                    # Create ROI rectangle in image coordinates
+                    x1 = min(self.roi_start_point.x(), self.roi_end_point.x())
+                    y1 = min(self.roi_start_point.y(), self.roi_end_point.y())
+                    x2 = max(self.roi_start_point.x(), self.roi_end_point.x())
+                    y2 = max(self.roi_start_point.y(), self.roi_end_point.y())
+
+                    # Add 1 to include both endpoints (inclusive selection)
+                    # Python slicing [x1:x2] is exclusive of x2, so we need width = x2-x1+1
+                    width = max(1, x2 - x1 + 1)
+                    height = max(1, y2 - y1 + 1)
+
+                    # Store ROI in image coordinates
+                    self.current_roi = (x1, y1, width, height)
+
+                    # Emit signal with ROI coordinates (x, y, width, height)
+                    self.roiSelected.emit(x1, y1, width, height)
+
+                    # Exit selection mode without clearing the ROI
+                    self.roi_selection_mode = False
+                    self.roi_btn.setText("Select ROI")
+                    # Clear temporary selection points but keep current_roi
+                    self.roi_start_point = None
+                    self.roi_end_point = None
+
+                    self._show_current()
+
+    def get_current_roi(self) -> Optional[tuple]:
+        """Get the current ROI coordinates (x, y, width, height) in image space."""
+        return self.current_roi
