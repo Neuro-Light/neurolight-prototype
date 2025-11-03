@@ -14,7 +14,10 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QAction
 
+import numpy as np
+
 from core.experiment_manager import Experiment, ExperimentManager
+from core.data_analyzer import DataAnalyzer
 from utils.file_handler import ImageStackHandler
 from ui.image_viewer import ImageViewer
 from ui.analysis_panel import AnalysisPanel
@@ -78,6 +81,12 @@ class MainWindow(QMainWindow):
 
         # Right panel: analysis dashboard
         self.analysis = AnalysisPanel()
+        
+        # Connect ROI selection to analysis
+        self.viewer.roiSelected.connect(self._on_roi_selected)
+        
+        # Create data analyzer
+        self.data_analyzer = DataAnalyzer(self.experiment)
 
         splitter.addWidget(self.viewer)
         splitter.addWidget(self.analysis)
@@ -135,6 +144,53 @@ class MainWindow(QMainWindow):
 
     def _close_experiment(self) -> None:
         self.close()
+
+    def _on_roi_selected(self, x: int, y: int, width: int, height: int) -> None:
+        """Handle ROI selection and extract intensity time series."""
+        try:
+            # Load all frames as numpy array (reusing Jupyter notebook approach)
+            frame_data = self.stack_handler.get_all_frames_as_array()
+            if frame_data is None:
+                QMessageBox.warning(
+                    self,
+                    "No Image Data",
+                    "No image stack loaded. Please load an image stack first."
+                )
+                return
+            
+            # Rescale frame data (reusing approach from Jupyter notebook)
+            # frame_data = NTF.rescale(frames, 0.0, 1.0)
+            # We'll keep it in original range but normalize if needed
+            frame_min = np.min(frame_data)
+            frame_max = np.max(frame_data)
+            if frame_max > 1.0:
+                # Normalize to 0-1 range like in Jupyter notebook
+                frame_data = (frame_data - frame_min) / (frame_max - frame_min) if frame_max != frame_min else frame_data
+            
+            # Extract ROI intensity time series
+            intensity_data = self.data_analyzer.extract_roi_intensity_time_series(
+                frame_data, x, y, width, height
+            )
+            
+            # Plot in the ROI Intensity tab
+            roi_plot_widget = self.analysis.get_roi_plot_widget()
+            roi_plot_widget.plot_intensity_time_series(
+                intensity_data,
+                (x, y, width, height)
+            )
+            
+            # Switch to ROI Intensity tab
+            for i in range(self.analysis.count()):
+                if self.analysis.tabText(i) == "ROI Intensity":
+                    self.analysis.setCurrentIndex(i)
+                    break
+                    
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to analyze ROI:\n{str(e)}"
+            )
 
     def autosave_experiment(self) -> None:
         if not self.experiment.settings.get("processing", {}).get("auto_save", True):
