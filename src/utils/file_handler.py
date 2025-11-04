@@ -74,7 +74,7 @@ class ImageStackHandler:
 
     def associate_with_experiment(self, experiment: Experiment) -> None:
         self._experiment = experiment
-        if experiment:
-            experiment.image_stack_path = str(Path(self.files[0]).parent) if self.files else None
-            experiment.image_count = len(self.files)
-
+        #keeps that path and loads the path to images when loading an expirement
+        experiment.image_count = len(self.files)
+        if self.files:
+            experiment.image_stack_path = str(Path(self.files[0]).parent)
