@@ -172,4 +172,3 @@ class StartupDialog(QDialog):
             self.accept()
         except Exception:
             pass
-

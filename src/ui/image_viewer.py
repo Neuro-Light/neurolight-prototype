@@ -55,6 +55,10 @@ class ImageViewer(QWidget):
         self.roi_end_point = None
         self.current_roi = None
 
+        self.filename_label = QLabel("Load image to see data") #label for user to see if no image are selected
+        self.filename_label.setAlignment(Qt.AlignCenter)
+        self.filename_label.setWordWrap(True)
+        self.filename_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.image_label = QLabel("Drop TIF files or open a folder…")
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setMinimumSize(320, 240)
@@ -79,6 +83,7 @@ class ImageViewer(QWidget):
         nav.addWidget(self.roi_btn)
 
         layout = QVBoxLayout(self)
+        layout.addWidget(self.filename_label)
         layout.addWidget(self.image_label)
         layout.addLayout(nav)
         layout.addWidget(self.slider)
@@ -140,6 +145,7 @@ class ImageViewer(QWidget):
         count = self.handler.get_image_count()
         if count == 0:
             self.image_label.setText("No images loaded")
+            self.filename_label.setText("Load image to see data")
             return
         img = self.cache.get(self.index)
         if img is None:
@@ -238,6 +244,9 @@ class ImageViewer(QWidget):
             painter.end()
 
         self.image_label.setPixmap(scaled_pix)
+        current_path = Path(self.handler.files[self.index])
+        #label for the image that is been viewed
+        self.filename_label.setText(f"{self.index + 1}/{count}: \n{current_path.name}")
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
