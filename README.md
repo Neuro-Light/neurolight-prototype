@@ -19,38 +19,68 @@ A powerful PySide6 desktop application for processing and analyzing large TIF im
 ## 🚀 Quick Start
 
 ### Prerequisites
+
 - Python 3.8 or higher
-- pip package manager
+- [uv](https://github.com/astral-sh/uv) package manager
 
 ### Installation
 
-1. **Clone or download the project**
+1. **Install uv** (if not already installed)
+
+   **Option A: Using pip (recommended)**
+
+   ```bash
+   pip install uv
+   ```
+
+   **Option B: Official installer**
+
+   ```bash
+   # Windows (PowerShell)
+   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+   # macOS/Linux
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+2. **Clone or download the project**
+
    ```bash
    git clone https://github.com/Neuro-Light/neurolight-prototype
    cd neurolight-prototype
    ```
 
-2. **Create a virtual environment**
-   
-   **Windows:**
+3. **Install dependencies and create virtual environment**
+
    ```bash
-   python -m venv venv
-   venv\Scripts\activate
-   ```
-   
-   **macOS/Linux:**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
+   uv sync
    ```
 
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
+   This will automatically create a virtual environment (`.venv`) and install all dependencies into it.
 
 4. **Launch the application**
+
+   **Recommended: Use `uv run`** (automatically uses the virtual environment):
+
    ```bash
+   uv run python src/main.py
+   ```
+
+   **Alternative: Manually activate the virtual environment**
+
+   If you prefer to activate the venv yourself:
+
+   **Windows:**
+
+   ```bash
+   .venv\Scripts\activate
+   python src/main.py
+   ```
+
+   **macOS/Linux:**
+
+   ```bash
+   source .venv/bin/activate
    python src/main.py
    ```
 
@@ -62,6 +92,7 @@ A powerful PySide6 desktop application for processing and analyzing large TIF im
 neurolight-prototype/
 │
 ├── 📄 README.md
+├── 📄 pyproject.toml
 ├── 📄 requirements.txt
 ├── 📄 .gitignore
 │
@@ -91,17 +122,17 @@ neurolight-prototype/
 
 ### 🔧 Module Responsibilities
 
-| Module | Purpose |
-|--------|---------|
-| **experiment_manager.py** | Create, load, save `.nexp` experiments; manage recent experiments list |
-| **file_handler.py** | Load/validate TIF stacks; provide random frame access; associate stacks with experiments |
-| **image_processor.py** | Apply OpenCV operations; maintain processing history for reproducibility |
-| **gif_generator.py** | Generate and optimize animated GIFs from image sequences |
-| **data_analyzer.py** | Calculate statistics, generate plots; store results in experiment sessions |
-| **startup_dialog.py** | Present new/load experiment options; show recent experiments |
-| **main_window.py** | Coordinate menus, panels, and auto-save functionality |
-| **image_viewer.py** | Display TIFs with navigation controls; implement LRU caching; handle drag-and-drop |
-| **analysis_panel.py** | Provide tabbed interface for future analysis tools |
+| Module                    | Purpose                                                                                  |
+| ------------------------- | ---------------------------------------------------------------------------------------- |
+| **experiment_manager.py** | Create, load, save `.nexp` experiments; manage recent experiments list                   |
+| **file_handler.py**       | Load/validate TIF stacks; provide random frame access; associate stacks with experiments |
+| **image_processor.py**    | Apply OpenCV operations; maintain processing history for reproducibility                 |
+| **gif_generator.py**      | Generate and optimize animated GIFs from image sequences                                 |
+| **data_analyzer.py**      | Calculate statistics, generate plots; store results in experiment sessions               |
+| **startup_dialog.py**     | Present new/load experiment options; show recent experiments                             |
+| **main_window.py**        | Coordinate menus, panels, and auto-save functionality                                    |
+| **image_viewer.py**       | Display TIFs with navigation controls; implement LRU caching; handle drag-and-drop       |
+| **analysis_panel.py**     | Provide tabbed interface for future analysis tools                                       |
 
 ---
 
@@ -110,6 +141,7 @@ neurolight-prototype/
 ### What is an Experiment?
 
 An **experiment** is a complete research session stored as a JSON file (`.nexp`) containing:
+
 - 📋 Metadata (name, description, principal investigator, dates)
 - 🖼️ Image stack information (path, dimensions, bit depth)
 - ⚙️ Processing history (all operations and parameters)
@@ -149,6 +181,7 @@ An **experiment** is a complete research session stored as a JSON file (`.nexp`)
 ### Sharing Experiments
 
 To collaborate with colleagues:
+
 1. Export the `.nexp` file from your `experiments/` directory
 2. Include the referenced image stack folder
 3. Colleagues can load the experiment and reproduce your entire workflow
@@ -160,6 +193,7 @@ To collaborate with colleagues:
 ### Starting the Application
 
 **Launch Screen:**
+
 1. Application opens to the **Startup Dialog**
 2. Choose your path:
    - 🆕 **Start New Experiment** – Enter metadata and create a fresh session
@@ -169,6 +203,7 @@ To collaborate with colleagues:
 ### Working with Experiments
 
 **Creating a New Experiment:**
+
 - Provide experiment name (required)
 - Add description and principal investigator
 - Choose save location (defaults to `experiments/` directory)
@@ -177,18 +212,21 @@ To collaborate with colleagues:
 **Main Application Window:**
 
 **Left Panel** (Image Navigation):
+
 - Drag-and-drop TIF files or an entire folder
 - Navigate frames with **Previous/Next** buttons
 - Use the slider for quick jumping
 - Frame counter displays current position
 
 **Right Panel** (Analysis Dashboard):
+
 - Tabbed interface with placeholders for:
   - 📊 Statistics
   - 📈 Graphs
   - 🎯 Detection (YOLOv8 integration planned)
 
 **Menu Bar:**
+
 - **File**: Save, Save As, Close Experiment, Open Image Stack, Export, Exit
 - **Edit**: Experiment Settings (edit metadata)
 - **Tools**: Generate GIF, Run Analysis (coming soon)
@@ -197,6 +235,7 @@ To collaborate with colleagues:
 ### Recent Experiments
 
 Recent experiments are tracked in `~/.neurolight/recent_experiments.json` and display:
+
 - Experiment name
 - Last modified date
 - Full file path
@@ -233,9 +272,11 @@ Launch → Startup Dialog → Create/Load Experiment → Main Window → Auto-Sa
 ## 🧪 Testing
 
 ### Framework
+
 We recommend **pytest** for unit and integration testing.
 
 ### Test Structure
+
 ```
 tests/
 ├── test_experiment_manager.py
@@ -245,6 +286,7 @@ tests/
 ```
 
 ### Running Tests
+
 ```bash
 pytest tests/
 ```
@@ -256,18 +298,21 @@ pytest tests/
 ### Planned Features
 
 **Collaboration & Sharing:**
+
 - 🔄 Experiment versioning and history
 - ☁️ Cloud storage integration
 - 🤝 Multi-user experiment comparison tools
 - 📤 Export to standardized formats (HDF5, OME-TIFF)
 
 **Advanced Analysis:**
+
 - 🎯 YOLOv8 object detection integration
 - ⚙️ Real-time processing pipelines
 - 📊 Advanced statistical modeling (statsmodels)
 - 🔬 Custom filter creation interface
 
 **User Experience:**
+
 - 🌙 Dark mode support
 - 📦 Batch processing capabilities
 - 🎨 Custom themes and layouts
@@ -278,6 +323,7 @@ pytest tests/
 ## 🤝 Contributing
 
 Areas for improvement:
+
 - Additional image processing algorithms
 - New analysis visualizations
 - UI/UX enhancements
@@ -295,6 +341,7 @@ MIT
 ## 🙏 Acknowledgments
 
 Built with:
+
 - [PySide6](https://doc.qt.io/qtforpython/) – Qt for Python
 - [OpenCV](https://opencv.org/) – Computer vision library
 - [NumPy](https://numpy.org/) / [SciPy](https://scipy.org/) – Scientific computing
