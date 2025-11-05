@@ -283,13 +283,13 @@ Add any other context or screenshots about the feature request.
 
 ### Issue Labels and What They Mean
 
-We label issues that would be good for a first time contributor as **`good first issue`**. These usually do not require significant experience with Python, PySide6, or the NeuroLight codebase.
+We label issues that would be good for a first time contributor as [**`good first issue`**](https://github.com/Neuro-Light/neurolight-prototype/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22). These usually do not require significant experience with Python, PySide6, or the NeuroLight codebase.
 
-We label issues that we think are a good opportunity for subsequent contributions as **`help wanted`**. These require varying levels of experience with Python and NeuroLight. Often, we want to accomplish these tasks but do not have the resources to do so ourselves.
+We label issues that we think are a good opportunity for subsequent contributions as [**`help wanted`**](https://github.com/Neuro-Light/neurolight-prototype/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22). These require varying levels of experience with Python and NeuroLight. Often, we want to accomplish these tasks but do not have the resources to do so ourselves.
 
 **Please check in with us before starting work on an issue that has not been labeled as appropriate for community contribution.** We're happy to receive contributions for other issues, but it's important to make sure we have consensus on the solution to the problem first.
 
-Outside of issues with the labels above, issues labeled as **`bug`** are the best candidates for contribution. In contrast, issues labeled with **`needs-decision`** or **`needs-design`** are not good candidates for contribution. Please do not open pull requests for issues with these labels.
+Outside of issues with the labels above, issues labeled as [**`bug`**](https://github.com/Neuro-Light/neurolight-prototype/issues?q=is%3Aissue+is%3Aopen+label%3Abug) are the best candidates for contribution. In contrast, issues labeled with **`needs-decision`** or **`needs-design`** are not good candidates for contribution. Please do not open pull requests for issues with these labels.
 
 **Please do not open pull requests for new features without prior discussion.** While we appreciate exploration of new features, we will almost always close these pull requests immediately. Adding a new feature to NeuroLight creates a long-term maintenance burden and requires strong consensus from the NeuroLight team before it is appropriate to begin work on an implementation.
 
@@ -313,7 +313,7 @@ If you have questions about contributing:
 
 ## License
 
-By contributing to NeuroLight, you agree that your contributions will be licensed under the MIT License & Apache 2.0.
+By contributing to NeuroLight, you agree that your contributions will be licensed under the MIT License.
 
 ---
 
