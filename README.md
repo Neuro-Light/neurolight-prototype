@@ -187,6 +187,7 @@ To collaborate with colleagues:
 3. Colleagues can load the experiment and reproduce your entire workflow
 
 **Note:** Both the `.nexp` file and the image stack folder must be shared; the experiment file references image paths, so the folder structure should be preserved when sharing.
+
 ---
 
 ## 📖 Usage Guide
