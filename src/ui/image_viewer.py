@@ -56,9 +56,10 @@ class ImageViewer(QWidget):
         self.current_roi = None
 
         self.filename_label = QLabel("Load image to see data") #label for user to see if no image are selected
-        self.filename_label.setAlignment(Qt.AlignCenter)
+        self.filename_label.setAlignment(Qt.AlignHCenter) # Qt.AlignHCenter centers widget horizontally
         self.filename_label.setWordWrap(True)
         self.filename_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        
         self.image_label = QLabel("Drop TIF files or open a folder…")
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setMinimumSize(320, 240)
@@ -87,6 +88,7 @@ class ImageViewer(QWidget):
         layout.addWidget(self.image_label)
         layout.addLayout(nav)
         layout.addWidget(self.slider)
+        layout.addStretch(1) # adds stretchable element at bottom of vertical layout, makes widgets compact
 
         self.setAcceptDrops(True)
 
