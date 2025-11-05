@@ -102,15 +102,21 @@ class MainWindow(QMainWindow):
             if path:
                 def load_stack_and_roi(p=path):
                     self.viewer.set_stack(p)
-                    # Load ROI after stack is loaded (with a small delay to ensure image is displayed)
+                    # Load ROI and redraw graph after stack is loaded (with a delay to ensure image is loaded)
                     if self.experiment.roi:
                         roi = self.experiment.roi
-                        QTimer.singleShot(100, lambda: self.viewer.set_roi(
-                            roi.get("x", 0),
-                            roi.get("y", 0),
-                            roi.get("width", 0),
-                            roi.get("height", 0)
-                        ))
+                        x = roi.get("x", 0)
+                        y = roi.get("y", 0)
+                        width = roi.get("width", 0)
+                        height = roi.get("height", 0)
+                        
+                        def load_roi_and_plot():
+                            # Set the ROI in the viewer
+                            self.viewer.set_roi(x, y, width, height)
+                            # Redraw the ROI intensity graph
+                            self._on_roi_selected(x, y, width, height)
+                        
+                        QTimer.singleShot(200, load_roi_and_plot)
                 QTimer.singleShot(0, load_stack_and_roi)
         except Exception:
             pass
