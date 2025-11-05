@@ -101,21 +101,30 @@ class MainWindow(QMainWindow):
             path = self.experiment.image_stack_path
             if path:
                 def load_stack_and_roi(p=path):
+
                     self.viewer.set_stack(p)
-                    # Load ROI and redraw graph after stack is loaded (with a delay to ensure image is loaded)
+
+                    # Load ROI and redraw graph after stack is loaded
+                    # ROI coordinates are in image pixel space and will be converted
+                    # to display coordinates by the image viewer (see image_viewer.py _show_current)
                     if self.experiment.roi:
                         roi = self.experiment.roi
+
+                        # Extract coordinates from saved ROI (in image pixel space)
                         x = roi.get("x", 0)
                         y = roi.get("y", 0)
                         width = roi.get("width", 0)
                         height = roi.get("height", 0)
                         
                         def load_roi_and_plot():
-                            # Set the ROI in the viewer
+
+                            # Set the ROI in the viewer (coordinates in image pixel space)
+                            # The viewer will convert these to display coordinates when drawing
                             self.viewer.set_roi(x, y, width, height)
-                            # Redraw the ROI intensity graph
+                            # Redraw the ROI intensity graph with the saved ROI
                             self._on_roi_selected(x, y, width, height)
                         
+                        # Delay to ensure image stack is fully loaded before drawing ROI
                         QTimer.singleShot(200, load_roi_and_plot)
                 QTimer.singleShot(0, load_stack_and_roi)
         except Exception:
@@ -211,10 +220,24 @@ class MainWindow(QMainWindow):
             )
 
     def _save_roi_to_experiment(self, x: int, y: int, width: int, height: int) -> None:
-        """Save ROI coordinates to experiment and persist to file."""
+        """
+        Save ROI coordinates to experiment and persist to .nexp file.
+        
+        This method is called when a user selects an ROI in the image viewer.
+        Coordinates are in original image pixel space (not widget/display space).
+        This ensures the ROI stays fixed to the correct image region when:
+        - The window is resized
+        - The experiment is loaded on a different screen resolution
+        - The image scaling changes
+        
+        The ROI is automatically saved to the .nexp file so it persists across sessions.
+        """
+        # Store coordinates in image pixel space (not display coordinates)
+        # These coordinates are saved to the .nexp file and remain constant
         self.experiment.roi = {"x": x, "y": y, "width": width, "height": height}
         if self.current_experiment_path:
             try:
+                # Persist ROI to .nexp file immediately
                 self.manager.save_experiment(self.experiment, self.current_experiment_path)
             except Exception:
                 pass
