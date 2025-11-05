@@ -28,9 +28,13 @@ A powerful PySide6 desktop application for processing and analyzing large TIF im
 1. **Install uv** (if not already installed)
 
    **Option A: Using pip (recommended)**
-
+   
    ```bash
+   Windows:
    pip install uv
+
+   Mac:
+   brew install uv
    ```
 
    **Option B: Official installer**
@@ -43,14 +47,14 @@ A powerful PySide6 desktop application for processing and analyzing large TIF im
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-2. **Clone or download the project**
+3. **Clone or download the project**
 
    ```bash
    git clone https://github.com/Neuro-Light/neurolight-prototype
    cd neurolight-prototype
    ```
 
-3. **Install dependencies and create virtual environment**
+4. **Install dependencies and create virtual environment**
 
    ```bash
    uv sync
@@ -58,7 +62,7 @@ A powerful PySide6 desktop application for processing and analyzing large TIF im
 
    This will automatically create a virtual environment (`.venv`) and install all dependencies into it.
 
-4. **Launch the application**
+5. **Launch the application**
 
    **Recommended: Use `uv run`** (automatically uses the virtual environment):
 
