@@ -28,6 +28,11 @@ class Experiment:
         "display": {"colormap": "gray", "brightness": 1.0},
         "processing": {"auto_save": True},
     })
+    # Store ROI coordinates in image pixel space (not widget/display space)
+    # Format: {"x": int, "y": int, "width": int, "height": int}
+    # These coordinates are in original image pixels, ensuring ROI stays fixed to
+    # the image region regardless of window size or scaling
+    roi: Optional[Dict[str, int]] = None
 
     def to_json(self) -> Dict[str, Any]:
         return {
@@ -49,6 +54,9 @@ class Experiment:
                 "processing": {"history": self.processing_history},
                 "analysis": {"results": self.analysis_results, "plots": []},
                 "settings": self.settings,
+                # Save ROI coordinates to .nexp file
+                # Coordinates are in image pixel space, not display/widget space
+                "roi": self.roi,
             },
         }
 
@@ -71,6 +79,11 @@ class Experiment:
             processing_history=exp.get("processing", {}).get("history", []),
             analysis_results=exp.get("analysis", {}).get("results", {}),
             settings=exp.get("settings", {}),
+
+            # Load ROI coordinates from .nexp file
+            # Coordinates are in image pixel space and will be converted to display
+            # coordinates when drawing (see image_viewer.py _show_current method)
+            roi=exp.get("roi"),
         )
 
     def update_modified_date(self) -> None:

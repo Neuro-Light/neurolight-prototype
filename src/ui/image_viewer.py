@@ -83,10 +83,13 @@ class ImageViewer(QWidget):
         nav.addWidget(self.roi_btn)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(self.filename_label)
-        layout.addWidget(self.image_label)
+        # Image gets most of the space (stretch factor 1)
+        layout.addWidget(self.image_label, 1)
         layout.addLayout(nav)
         layout.addWidget(self.slider)
+        # Metadata label should be compact (stretch factor 0, max height)
+        self.filename_label.setMaximumHeight(50)
+        layout.addWidget(self.filename_label, 0)
 
         self.setAcceptDrops(True)
 
@@ -157,7 +160,14 @@ class ImageViewer(QWidget):
             self.image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
         )
 
-        # Draw ROI selection rectangle if in selection mode
+        # ============================================================
+        # ROI FIX: Draw ROI selection rectangle during selection mode
+        # ============================================================
+        # FIX DETAILS:
+        # - ROI coordinates are stored in ORIGINAL IMAGE PIXEL SPACE (not widget/display space)
+        # - This ensures ROI stays fixed to the image region regardless of window resizing
+        # - When drawing, we recalculate scale from the ACTUAL scaled pixmap size (not label size)
+        # - This prevents the ROI from moving when the pane is resized
         if (
             self.roi_selection_mode
             and self.roi_start_point is not None
@@ -169,78 +179,100 @@ class ImageViewer(QWidget):
 
             if img.ndim >= 2:
                 original_height, original_width = img.shape[0], img.shape[1]
-                scaled_size = scaled_pix.size()
                 label_size = self.image_label.size()
 
-                # Calculate aspect ratio scaling
+                # ROI FIX: Calculate aspect ratio to determine which dimension constrains scaling
+                # This determines whether width or height of the label determines the scale factor
                 label_aspect = label_size.width() / label_size.height()
                 original_aspect = original_width / original_height
 
+                # ROI FIX: Calculate scale from ACTUAL scaled pixmap dimensions (not label size)
+                # This is critical - we use scaled_pix.height()/width() directly because:
+                # 1. The pixmap is already scaled to fit the label while maintaining aspect ratio
+                # 2. Using the pixmap size ensures we get the correct scale regardless of window size
+                # 3. This prevents ROI drift when resizing the window
                 if label_aspect > original_aspect:
-                    scale = scaled_size.height() / original_height
+                    # Label is wider than image - height constrains the scale
+                    scale = scaled_pix.height() / original_height
                 else:
-                    scale = scaled_size.width() / original_width
+                    # Label is taller than image - width constrains the scale
+                    scale = scaled_pix.width() / original_width
 
-                # Convert ROI coordinates to scaled display coordinates
+                # ROI FIX: ROI coordinates are in ORIGINAL IMAGE SPACE (from mouse event conversion)
+                # These were converted from mouse coordinates to image pixel coordinates in
+                # _on_mouse_press/_on_mouse_move/_on_mouse_release methods
                 x1 = min(self.roi_start_point.x(), self.roi_end_point.x())
                 y1 = min(self.roi_start_point.y(), self.roi_end_point.y())
                 x2 = max(self.roi_start_point.x(), self.roi_end_point.x())
                 y2 = max(self.roi_start_point.y(), self.roi_end_point.y())
 
+                # ROI FIX: Convert from image pixel coordinates to scaled display coordinates
+                # Multiply by the scale factor to get the correct display position
+                # The +1 ensures we include both endpoints in the selection
                 x1_scaled = int(x1 * scale)
                 y1_scaled = int(y1 * scale)
-                w_scaled = int((x2 - x1) * scale)
-                h_scaled = int((y2 - y1) * scale)
+                w_scaled = int((x2 - x1 + 1) * scale)
+                h_scaled = int((y2 - y1 + 1) * scale)
 
-                # Account for centering offset
-                offset_x = (label_size.width() - scaled_size.width()) / 2
-                offset_y = (label_size.height() - scaled_size.height()) / 2
-
-                painter.drawRect(
-                    int(x1_scaled + offset_x),
-                    int(y1_scaled + offset_y),
-                    w_scaled,
-                    h_scaled,
-                )
+                # ROI FIX: Draw directly on the scaled pixmap (no offset needed)
+                # Since we're drawing on the pixmap itself (not the label), we don't need
+                # to account for centering offsets. The pixmap will be centered by Qt when displayed.
+                painter.drawRect(x1_scaled, y1_scaled, w_scaled, h_scaled)
             painter.end()
 
-        # Draw saved ROI if not in selection mode
+        # ============================================================
+        # ROI FIX: Draw saved ROI rectangle when not in selection mode
+        # ============================================================
+        # FIX DETAILS:
+        # - This is the key fix for keeping ROI anchored to image region on resize
+        # - ROI is stored in image pixel coordinates (self.current_roi)
+        # - Scale is recalculated EVERY time _show_current() is called (including on resize)
+        # - This ensures ROI position updates correctly when window/pane size changes
         elif self.current_roi is not None and not self.roi_selection_mode:
             painter = QPainter(scaled_pix)
             pen = QPen(Qt.green, 2, Qt.SolidLine)
             painter.setPen(pen)
 
-            # Get original image dimensions
+            # Get original image dimensions (in pixels)
             if img.ndim >= 2:
                 original_height, original_width = img.shape[0], img.shape[1]
-                scaled_size = scaled_pix.size()
                 label_size = self.image_label.size()
 
-                # Calculate aspect ratio scaling
+                # ROI FIX: Calculate aspect ratio to determine scaling constraint
+                # This tells us whether the label is wider or taller relative to the image
                 label_aspect = label_size.width() / label_size.height()
                 original_aspect = original_width / original_height
 
+                # ROI FIX: Calculate scale from ACTUAL scaled pixmap size (not label size)
+                # CRITICAL: We use scaled_pix.height()/width() NOT label_size because:
+                # - The pixmap is already scaled to fit the label with aspect ratio preserved
+                # - The pixmap size reflects the actual displayed image size
+                # - This ensures correct scale calculation even when window is resized
+                # - Using label_size would cause incorrect offsets and ROI drift
                 if label_aspect > original_aspect:
-                    scale = scaled_size.height() / original_height
+                    # Label is wider than image - height constrains the scale
+                    scale = scaled_pix.height() / original_height
                 else:
-                    scale = scaled_size.width() / original_width
+                    # Label is taller than image - width constrains the scale
+                    scale = scaled_pix.width() / original_width
 
+                # ROI FIX: ROI coordinates stored in ORIGINAL IMAGE PIXEL SPACE
+                # These coordinates are saved to the .nexp file and remain constant
+                # regardless of window size or image scaling
                 x, y, w, h = self.current_roi
+                
+                # ROI FIX: Convert from image pixel coordinates to scaled display coordinates
+                # Multiply by the dynamically calculated scale factor
+                # This conversion happens every time the image is redrawn (including on resize)
                 x_scaled = int(x * scale)
                 y_scaled = int(y * scale)
                 w_scaled = int(w * scale)
                 h_scaled = int(h * scale)
 
-                # Account for centering offset
-                offset_x = (label_size.width() - scaled_size.width()) / 2
-                offset_y = (label_size.height() - scaled_size.height()) / 2
-
-                painter.drawRect(
-                    int(x_scaled + offset_x),
-                    int(y_scaled + offset_y),
-                    w_scaled,
-                    h_scaled,
-                )
+                # ROI FIX: Draw directly on the scaled pixmap (no centering offset needed)
+                # Since we're drawing on the pixmap itself, coordinates are relative to the pixmap
+                # Qt will handle centering the pixmap in the label if needed
+                painter.drawRect(x_scaled, y_scaled, w_scaled, h_scaled)
             painter.end()
 
         self.image_label.setPixmap(scaled_pix)
@@ -249,6 +281,10 @@ class ImageViewer(QWidget):
         self.filename_label.setText(f"{self.index + 1}/{count}: \n{current_path.name}")
 
     def resizeEvent(self, event) -> None:  # noqa: N802
+        # ROI FIX: Redraw on resize so ROI scale updates correctly
+        # When the window/pane is resized, the scaled_pix size changes
+        # By calling _show_current(), we recalculate the scale factor and redraw the ROI
+        # at the correct position for the new display size
         super().resizeEvent(event)
         self._show_current()
 
@@ -439,3 +475,16 @@ class ImageViewer(QWidget):
     def get_current_roi(self) -> Optional[tuple]:
         """Get the current ROI coordinates (x, y, width, height) in image space."""
         return self.current_roi
+
+    def set_roi(self, x: int, y: int, width: int, height: int) -> None:
+        """
+        ROI FIX: Set the ROI from saved coordinates (x, y, width, height) in image space.
+        
+        This method is called when loading an experiment with a saved ROI.
+        The coordinates are in original image pixel space, not display/widget space.
+        This ensures the ROI stays fixed to the correct image region regardless of
+        window size or scaling.
+        """
+        self.current_roi = (x, y, width, height)
+        # Redraw to show the ROI with correct scaling
+        self._show_current()
