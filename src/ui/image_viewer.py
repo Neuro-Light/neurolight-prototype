@@ -83,10 +83,13 @@ class ImageViewer(QWidget):
         nav.addWidget(self.roi_btn)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(self.filename_label)
-        layout.addWidget(self.image_label)
+        # Image gets most of the space (stretch factor 1)
+        layout.addWidget(self.image_label, 1)
         layout.addLayout(nav)
         layout.addWidget(self.slider)
+        # Metadata label should be compact (stretch factor 0, max height)
+        self.filename_label.setMaximumHeight(50)
+        layout.addWidget(self.filename_label, 0)
 
         self.setAcceptDrops(True)
 
