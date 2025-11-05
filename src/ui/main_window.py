@@ -82,8 +82,9 @@ class MainWindow(QMainWindow):
         # Right panel: analysis dashboard
         self.analysis = AnalysisPanel()
         
-        # Connect ROI selection to analysis
+        # Connect ROI selection to analysis and saving
         self.viewer.roiSelected.connect(self._on_roi_selected)
+        self.viewer.roiSelected.connect(self._save_roi_to_experiment)
         
         # Create data analyzer
         self.data_analyzer = DataAnalyzer(self.experiment)
@@ -99,7 +100,18 @@ class MainWindow(QMainWindow):
         try:
             path = self.experiment.image_stack_path
             if path:
-                QTimer.singleShot(0, lambda p=path: self.viewer.set_stack(p))
+                def load_stack_and_roi(p=path):
+                    self.viewer.set_stack(p)
+                    # Load ROI after stack is loaded (with a small delay to ensure image is displayed)
+                    if self.experiment.roi:
+                        roi = self.experiment.roi
+                        QTimer.singleShot(100, lambda: self.viewer.set_roi(
+                            roi.get("x", 0),
+                            roi.get("y", 0),
+                            roi.get("width", 0),
+                            roi.get("height", 0)
+                        ))
+                QTimer.singleShot(0, load_stack_and_roi)
         except Exception:
             pass
 
@@ -191,6 +203,15 @@ class MainWindow(QMainWindow):
                 "Error",
                 f"Failed to analyze ROI:\n{str(e)}"
             )
+
+    def _save_roi_to_experiment(self, x: int, y: int, width: int, height: int) -> None:
+        """Save ROI coordinates to experiment and persist to file."""
+        self.experiment.roi = {"x": x, "y": y, "width": width, "height": height}
+        if self.current_experiment_path:
+            try:
+                self.manager.save_experiment(self.experiment, self.current_experiment_path)
+            except Exception:
+                pass
 
     def autosave_experiment(self) -> None:
         if not self.experiment.settings.get("processing", {}).get("auto_save", True):

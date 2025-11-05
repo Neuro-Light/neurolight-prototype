@@ -169,43 +169,40 @@ class ImageViewer(QWidget):
 
             if img.ndim >= 2:
                 original_height, original_width = img.shape[0], img.shape[1]
-                scaled_size = scaled_pix.size()
                 label_size = self.image_label.size()
 
                 # Calculate aspect ratio scaling
                 label_aspect = label_size.width() / label_size.height()
                 original_aspect = original_width / original_height
 
+                # Calculate the actual scale factor used
                 if label_aspect > original_aspect:
-                    scale = scaled_size.height() / original_height
+                    # Label is wider - height determines scale
+                    scale = scaled_pix.height() / original_height
                 else:
-                    scale = scaled_size.width() / original_width
+                    # Label is taller - width determines scale
+                    scale = scaled_pix.width() / original_width
 
-                # Convert ROI coordinates to scaled display coordinates
+                # ROI coordinates are in original image space (from mouse events)
                 x1 = min(self.roi_start_point.x(), self.roi_end_point.x())
                 y1 = min(self.roi_start_point.y(), self.roi_end_point.y())
                 x2 = max(self.roi_start_point.x(), self.roi_end_point.x())
                 y2 = max(self.roi_start_point.y(), self.roi_end_point.y())
 
+                # Convert to scaled display coordinates
                 x1_scaled = int(x1 * scale)
                 y1_scaled = int(y1 * scale)
-                w_scaled = int((x2 - x1) * scale)
-                h_scaled = int((y2 - y1) * scale)
+                w_scaled = int((x2 - x1 + 1) * scale)
+                h_scaled = int((y2 - y1 + 1) * scale)
 
-                # Account for centering offset
-                offset_x = (label_size.width() - scaled_size.width()) / 2
-                offset_y = (label_size.height() - scaled_size.height()) / 2
-
-                painter.drawRect(
-                    int(x1_scaled + offset_x),
-                    int(y1_scaled + offset_y),
-                    w_scaled,
-                    h_scaled,
-                )
+                # Draw directly on the scaled pixmap (no offset needed)
+                painter.drawRect(x1_scaled, y1_scaled, w_scaled, h_scaled)
             painter.end()
 
         # Draw saved ROI if not in selection mode
         elif self.current_roi is not None and not self.roi_selection_mode:
+            # We need to draw on the label, not the pixmap, so we'll do it in paintEvent
+            # But for now, let's draw on the pixmap correctly
             painter = QPainter(scaled_pix)
             pen = QPen(Qt.green, 2, Qt.SolidLine)
             painter.setPen(pen)
@@ -213,34 +210,31 @@ class ImageViewer(QWidget):
             # Get original image dimensions
             if img.ndim >= 2:
                 original_height, original_width = img.shape[0], img.shape[1]
-                scaled_size = scaled_pix.size()
                 label_size = self.image_label.size()
 
-                # Calculate aspect ratio scaling
+                # Calculate aspect ratio scaling - this determines how the image is scaled
                 label_aspect = label_size.width() / label_size.height()
                 original_aspect = original_width / original_height
 
+                # Calculate the actual scale factor used
                 if label_aspect > original_aspect:
-                    scale = scaled_size.height() / original_height
+                    # Label is wider - height determines scale
+                    scale = scaled_pix.height() / original_height
                 else:
-                    scale = scaled_size.width() / original_width
+                    # Label is taller - width determines scale
+                    scale = scaled_pix.width() / original_width
 
+                # ROI coordinates are in original image space
                 x, y, w, h = self.current_roi
+                
+                # Convert to scaled display coordinates
                 x_scaled = int(x * scale)
                 y_scaled = int(y * scale)
                 w_scaled = int(w * scale)
                 h_scaled = int(h * scale)
 
-                # Account for centering offset
-                offset_x = (label_size.width() - scaled_size.width()) / 2
-                offset_y = (label_size.height() - scaled_size.height()) / 2
-
-                painter.drawRect(
-                    int(x_scaled + offset_x),
-                    int(y_scaled + offset_y),
-                    w_scaled,
-                    h_scaled,
-                )
+                # Draw directly on the scaled pixmap (no offset needed since we're drawing on the pixmap itself)
+                painter.drawRect(x_scaled, y_scaled, w_scaled, h_scaled)
             painter.end()
 
         self.image_label.setPixmap(scaled_pix)
@@ -439,3 +433,8 @@ class ImageViewer(QWidget):
     def get_current_roi(self) -> Optional[tuple]:
         """Get the current ROI coordinates (x, y, width, height) in image space."""
         return self.current_roi
+
+    def set_roi(self, x: int, y: int, width: int, height: int) -> None:
+        """Set the ROI from saved coordinates (x, y, width, height) in image space."""
+        self.current_roi = (x, y, width, height)
+        self._show_current()

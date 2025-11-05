@@ -28,6 +28,7 @@ class Experiment:
         "display": {"colormap": "gray", "brightness": 1.0},
         "processing": {"auto_save": True},
     })
+    roi: Optional[Dict[str, int]] = None  # {"x": int, "y": int, "width": int, "height": int}
 
     def to_json(self) -> Dict[str, Any]:
         return {
@@ -49,6 +50,7 @@ class Experiment:
                 "processing": {"history": self.processing_history},
                 "analysis": {"results": self.analysis_results, "plots": []},
                 "settings": self.settings,
+                "roi": self.roi,
             },
         }
 
@@ -71,6 +73,7 @@ class Experiment:
             processing_history=exp.get("processing", {}).get("history", []),
             analysis_results=exp.get("analysis", {}).get("results", {}),
             settings=exp.get("settings", {}),
+            roi=exp.get("roi"),
         )
 
     def update_modified_date(self) -> None:
