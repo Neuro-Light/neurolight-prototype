@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QLabel,
     QMessageBox,
+    QApplication,
+    QDialog,
 )
 from PySide6.QtGui import QAction
 
@@ -21,6 +23,7 @@ from core.data_analyzer import DataAnalyzer
 from utils.file_handler import ImageStackHandler
 from ui.image_viewer import ImageViewer
 from ui.analysis_panel import AnalysisPanel
+from ui.startup_dialog import StartupDialog
 
 
 class MainWindow(QMainWindow):
@@ -43,7 +46,7 @@ class MainWindow(QMainWindow):
         save_action = QAction("Save Experiment", self)
         save_as_action = QAction("Save Experiment As...", self)
         close_action = QAction("Close Experiment", self)
-        exit_action = QAction("Exit", self)
+        exit_action = QAction("Exit Experiment", self)
         open_stack_action = QAction("Open Image Stack", self)
         export_results_action = QAction("Export Results", self)
 
@@ -52,7 +55,7 @@ class MainWindow(QMainWindow):
         save_action.triggered.connect(self._save)
         save_as_action.triggered.connect(self._save_as)
         close_action.triggered.connect(self._close_experiment)
-        exit_action.triggered.connect(self.close)
+        exit_action.triggered.connect(self._exit_experiment)
         open_stack_action.triggered.connect(self._open_image_stack)
 
         file_menu.addAction(save_action)
@@ -81,11 +84,11 @@ class MainWindow(QMainWindow):
 
         # Right panel: analysis dashboard
         self.analysis = AnalysisPanel()
-        
+
         # Connect ROI selection to analysis and saving
         self.viewer.roiSelected.connect(self._on_roi_selected)
         self.viewer.roiSelected.connect(self._save_roi_to_experiment)
-        
+
         # Create data analyzer
         self.data_analyzer = DataAnalyzer(self.experiment)
 
@@ -96,42 +99,38 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(splitter)
 
-        # Auto-load image stack if experiment has a saved path
+        # Auto-load image stack/ROI if experiment has saved data
+        self._auto_load_experiment_data()
+
+    def _auto_load_experiment_data(self) -> None:
+        """Auto-load image stack and ROI if experiment has saved data."""
         try:
             path = self.experiment.image_stack_path
             if path:
+
                 def load_stack_and_roi(p=path):
-
                     self.viewer.set_stack(p)
-
-                    # Load ROI and redraw graph after stack is loaded
-                    # ROI coordinates are in image pixel space and will be converted
-                    # to display coordinates by the image viewer (see image_viewer.py _show_current)
                     if self.experiment.roi:
                         roi = self.experiment.roi
-
-                        # Extract coordinates from saved ROI (in image pixel space)
                         x = roi.get("x", 0)
                         y = roi.get("y", 0)
                         width = roi.get("width", 0)
                         height = roi.get("height", 0)
-                        
-                        def load_roi_and_plot():
 
-                            # Set the ROI in the viewer (coordinates in image pixel space)
-                            # The viewer will convert these to display coordinates when drawing
+                        def load_roi_and_plot():
                             self.viewer.set_roi(x, y, width, height)
-                            # Redraw the ROI intensity graph with the saved ROI
                             self._on_roi_selected(x, y, width, height)
-                        
-                        # Delay to ensure image stack is fully loaded before drawing ROI
+
                         QTimer.singleShot(200, load_roi_and_plot)
+
                 QTimer.singleShot(0, load_stack_and_roi)
         except Exception:
             pass
 
     def _open_image_stack(self) -> None:
-        directory = QFileDialog.getExistingDirectory(self, "Select Image Stack Folder", "")
+        directory = QFileDialog.getExistingDirectory(
+            self, "Select Image Stack Folder", ""
+        )
         if not directory:
             return
         self.viewer.set_stack(directory)
@@ -142,7 +141,9 @@ class MainWindow(QMainWindow):
         # Persist immediately if we know the path to the .nexp
         if self.current_experiment_path:
             try:
-                self.manager.save_experiment(self.experiment, self.current_experiment_path)
+                self.manager.save_experiment(
+                    self.experiment, self.current_experiment_path
+                )
             except Exception:
                 pass
 
@@ -157,7 +158,9 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", str(e))
 
     def _save_as(self) -> None:
-        file_path, _ = QFileDialog.getSaveFileName(self, "Save Experiment As", "", "Neurolight Experiment (*.nexp)")
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Experiment As", "", "Neurolight Experiment (*.nexp)"
+        )
         if not file_path:
             return
         if not file_path.endswith(".nexp"):
@@ -170,7 +173,69 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", str(e))
 
     def _close_experiment(self) -> None:
-        self.close()
+        """
+        Close the current experiment and navigate to the home page (StartupDialog).
+        This keeps the user in the application and allows them to select a new experiment.
+        """
+        # Prompt user if there are unsaved changes
+        reply = QMessageBox.question(
+            self,
+            "Close Experiment",
+            "Are you sure you want to close this experiment and return to the home page?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+
+        if reply == QMessageBox.No:
+            return
+
+        # Hide the main window
+        self.hide()
+
+        # Show startup dialog
+        startup = StartupDialog()
+        result = startup.exec()
+
+        if result == QDialog.Accepted and startup.experiment is not None:
+            # User selected a new experiment - replace current experiment
+            self.experiment = startup.experiment
+            self.current_experiment_path = startup.experiment_path
+            self.setWindowTitle(f"Neurolight - {self.experiment.name}")
+
+            # Reset viewer state
+            self.viewer.reset()
+
+            # Clear analysis panel
+            self.analysis.roi_plot_widget.clear_plot()
+
+            # Reassociate handler and data analyzer with new experiment
+            self.stack_handler.associate_with_experiment(self.experiment)
+            self.data_analyzer = DataAnalyzer(self.experiment)
+
+            # Auto-load image stack/ROI if experiment has saved data
+            self._auto_load_experiment_data()
+
+            # Show the window again
+            self.show()
+        else:
+            # User canceled - exit the application
+            QApplication.quit()
+
+    def _exit_experiment(self) -> None:
+        """
+        Exit the entire application.
+        This closes the application completely.
+        """
+        reply = QMessageBox.question(
+            self,
+            "Exit Experiment",
+            "Are you sure you want to exit the application?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+
+        if reply == QMessageBox.Yes:
+            QApplication.quit()
 
     def _on_roi_selected(self, x: int, y: int, width: int, height: int) -> None:
         """Handle ROI selection and extract intensity time series."""
@@ -181,10 +246,10 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(
                     self,
                     "No Image Data",
-                    "No image stack loaded. Please load an image stack first."
+                    "No image stack loaded. Please load an image stack first.",
                 )
                 return
-            
+
             # Rescale frame data (reusing approach from Jupyter notebook)
             # frame_data = NTF.rescale(frames, 0.0, 1.0)
             # We'll keep it in original range but normalize if needed
@@ -192,44 +257,43 @@ class MainWindow(QMainWindow):
             frame_max = np.max(frame_data)
             if frame_max > 1.0:
                 # Normalize to 0-1 range like in Jupyter notebook
-                frame_data = (frame_data - frame_min) / (frame_max - frame_min) if frame_max != frame_min else frame_data
-            
+                frame_data = (
+                    (frame_data - frame_min) / (frame_max - frame_min)
+                    if frame_max != frame_min
+                    else frame_data
+                )
+
             # Extract ROI intensity time series
             intensity_data = self.data_analyzer.extract_roi_intensity_time_series(
                 frame_data, x, y, width, height
             )
-            
+
             # Plot in the ROI Intensity tab
             roi_plot_widget = self.analysis.get_roi_plot_widget()
             roi_plot_widget.plot_intensity_time_series(
-                intensity_data,
-                (x, y, width, height)
+                intensity_data, (x, y, width, height)
             )
-            
+
             # Switch to ROI Intensity tab
             for i in range(self.analysis.count()):
                 if self.analysis.tabText(i) == "ROI Intensity":
                     self.analysis.setCurrentIndex(i)
                     break
-                    
+
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to analyze ROI:\n{str(e)}"
-            )
+            QMessageBox.critical(self, "Error", f"Failed to analyze ROI:\n{str(e)}")
 
     def _save_roi_to_experiment(self, x: int, y: int, width: int, height: int) -> None:
         """
         Save ROI coordinates to experiment and persist to .nexp file.
-        
+
         This method is called when a user selects an ROI in the image viewer.
         Coordinates are in original image pixel space (not widget/display space).
         This ensures the ROI stays fixed to the correct image region when:
         - The window is resized
         - The experiment is loaded on a different screen resolution
         - The image scaling changes
-        
+
         The ROI is automatically saved to the .nexp file so it persists across sessions.
         """
         # Store coordinates in image pixel space (not display coordinates)
@@ -238,7 +302,9 @@ class MainWindow(QMainWindow):
         if self.current_experiment_path:
             try:
                 # Persist ROI to .nexp file immediately
-                self.manager.save_experiment(self.experiment, self.current_experiment_path)
+                self.manager.save_experiment(
+                    self.experiment, self.current_experiment_path
+                )
             except Exception:
                 pass
 
@@ -251,4 +317,3 @@ class MainWindow(QMainWindow):
             self.manager.save_experiment(self.experiment, self.current_experiment_path)
         except Exception:
             pass
-
