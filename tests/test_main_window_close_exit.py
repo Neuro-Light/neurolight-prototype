@@ -36,11 +36,45 @@ def sample_experiment():
 @pytest.fixture
 def main_window(app, sample_experiment):
     """Create a MainWindow instance for testing."""
-    # Patch the layout initialization to avoid creating actual widgets
-    with patch("ui.main_window.MainWindow._init_layout"):
+    # Create mock objects for heavy UI components
+    mock_viewer = Mock()
+    mock_viewer.index = 0
+    mock_viewer.cache = Mock()
+    mock_viewer.current_roi = None
+    mock_viewer.roi_selection_mode = False
+    mock_viewer.roi_start_point = None
+    mock_viewer.roi_end_point = None
+    mock_viewer.image_label = Mock()
+    mock_viewer.filename_label = Mock()
+    mock_viewer.slider = Mock()
+    mock_viewer.set_stack = Mock()
+    mock_viewer.set_roi = Mock()
+    # Signal mocks - allow connection
+    mock_viewer.stackLoaded = Mock()
+    mock_viewer.stackLoaded.connect = Mock()
+    mock_viewer.roiSelected = Mock()
+    mock_viewer.roiSelected.connect = Mock()
+    
+    mock_analysis = Mock()
+    mock_roi_plot_widget = Mock()
+    mock_analysis.roi_plot_widget = mock_roi_plot_widget
+    mock_analysis.get_roi_plot_widget = Mock(return_value=mock_roi_plot_widget)
+    
+    mock_stack_handler = Mock()
+    mock_stack_handler.files = []
+    mock_stack_handler.associate_with_experiment = Mock()
+    
+    mock_data_analyzer = Mock()
+    
+    # Patch the heavy UI components to return mocks
+    with (
+        patch("ui.main_window.ImageViewer", return_value=mock_viewer),
+        patch("ui.main_window.AnalysisPanel", return_value=mock_analysis),
+        patch("ui.main_window.ImageStackHandler", return_value=mock_stack_handler),
+        patch("ui.main_window.DataAnalyzer", return_value=mock_data_analyzer),
+        patch("ui.main_window.QTimer.singleShot"),  # Avoid timer side effects
+    ):
         window = MainWindow(sample_experiment)
-        # Initialize menu manually since we're skipping layout
-        window._init_menu()
         return window
 
 
