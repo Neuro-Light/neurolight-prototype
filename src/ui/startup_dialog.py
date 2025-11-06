@@ -169,6 +169,7 @@ class StartupDialog(QDialog):
             return
         try:
             self.experiment = self.manager.load_experiment(path)
+            self.experiment_path = path
             self.accept()
         except Exception:
             pass
