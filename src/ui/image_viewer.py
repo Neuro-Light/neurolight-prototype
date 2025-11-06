@@ -108,6 +108,26 @@ class ImageViewer(QWidget):
         if directory:
             self.stackLoaded.emit(directory)
 
+    def reset_cache(self) -> None:
+        """Reset the image cache."""
+        self.cache = _LRUCache(20)
+
+    def reset(self) -> None:
+        """Reset the viewer to initial state."""
+        # Clear handler files and reset navigation
+        self.handler.files = []
+        self.index = 0
+        # Reset cache and ROI-related state
+        self.cache = _LRUCache(20)
+        self.current_roi = None
+        self.roi_selection_mode = False
+        self.roi_start_point = None
+        self.roi_end_point = None
+        # Reset UI labels and slider
+        self.image_label.setText("Drop TIF files or open a folder…")
+        self.filename_label.setText("Load image to see data")
+        self.slider.setRange(0, 0)
+
     def dragEnterEvent(self, event) -> None:  # noqa: N802
         md = event.mimeData()
         if md.hasUrls():

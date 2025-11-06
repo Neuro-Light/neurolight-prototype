@@ -130,7 +130,7 @@ class TestCloseExperiment:
             patch("ui.main_window.StartupDialog", return_value=mock_startup_dialog),
             patch.object(main_window, "setWindowTitle") as mock_set_title,
             patch.object(main_window.stack_handler, "files", create=True),
-            patch("ui.main_window._LRUCache") as mock_lru_cache,
+            patch.object(main_window.viewer, "reset") as mock_viewer_reset,
             patch.object(
                 main_window.analysis.roi_plot_widget, "clear_plot"
             ) as mock_clear_plot,
@@ -138,8 +138,6 @@ class TestCloseExperiment:
             patch("ui.main_window.QTimer") as mock_timer,
         ):
             mock_question.return_value = QMessageBox.Yes
-            mock_lru_cache_instance = Mock()
-            mock_lru_cache.return_value = mock_lru_cache_instance
             mock_timer.singleShot = Mock()
 
             main_window._close_experiment()
@@ -149,6 +147,7 @@ class TestCloseExperiment:
             assert main_window.current_experiment_path == "/path/to/new/experiment.nexp"
             mock_set_title.assert_called_with("Neurolight - New Experiment")
             mock_clear_plot.assert_called_once()
+            mock_viewer_reset.assert_called_once()
             mock_show.assert_called_once()
 
 

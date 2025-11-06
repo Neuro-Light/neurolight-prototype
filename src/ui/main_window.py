@@ -21,7 +21,7 @@ import numpy as np
 from core.experiment_manager import Experiment, ExperimentManager
 from core.data_analyzer import DataAnalyzer
 from utils.file_handler import ImageStackHandler
-from ui.image_viewer import ImageViewer, _LRUCache
+from ui.image_viewer import ImageViewer
 from ui.analysis_panel import AnalysisPanel
 from ui.startup_dialog import StartupDialog
 
@@ -99,34 +99,28 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(splitter)
 
-        # Auto-load image stack if experiment has a saved path
+        # Auto-load image stack/ROI if experiment has saved data
+        self._auto_load_experiment_data()
+
+    def _auto_load_experiment_data(self) -> None:
+        """Auto-load image stack and ROI if experiment has saved data."""
         try:
             path = self.experiment.image_stack_path
             if path:
 
                 def load_stack_and_roi(p=path):
                     self.viewer.set_stack(p)
-
-                    # Load ROI and redraw graph after stack is loaded
-                    # ROI coordinates are in image pixel space and will be converted
-                    # to display coordinates by the image viewer (see image_viewer.py _show_current)
                     if self.experiment.roi:
                         roi = self.experiment.roi
-
-                        # Extract coordinates from saved ROI (in image pixel space)
                         x = roi.get("x", 0)
                         y = roi.get("y", 0)
                         width = roi.get("width", 0)
                         height = roi.get("height", 0)
 
                         def load_roi_and_plot():
-                            # Set the ROI in the viewer (coordinates in image pixel space)
-                            # The viewer will convert these to display coordinates when drawing
                             self.viewer.set_roi(x, y, width, height)
-                            # Redraw the ROI intensity graph with the saved ROI
                             self._on_roi_selected(x, y, width, height)
 
-                        # Delay to ensure image stack is fully loaded before drawing ROI
                         QTimer.singleShot(200, load_roi_and_plot)
 
                 QTimer.singleShot(0, load_stack_and_roi)
@@ -208,19 +202,8 @@ class MainWindow(QMainWindow):
             self.current_experiment_path = startup.experiment_path
             self.setWindowTitle(f"Neurolight - {self.experiment.name}")
 
-            # Reset UI components for new experiment
-            # Clear the image stack handler
-            self.stack_handler.files = []
-            self.viewer.index = 0
-            # Reset cache by creating a new instance
-            self.viewer.cache = _LRUCache(20)
-            self.viewer.current_roi = None
-            self.viewer.roi_selection_mode = False
-            self.viewer.roi_start_point = None
-            self.viewer.roi_end_point = None
-            self.viewer.image_label.setText("Drop TIF files or open a folder…")
-            self.viewer.filename_label.setText("Load image to see data")
-            self.viewer.slider.setRange(0, 0)
+            # Reset viewer state
+            self.viewer.reset()
 
             # Clear analysis panel
             self.analysis.roi_plot_widget.clear_plot()
@@ -229,29 +212,8 @@ class MainWindow(QMainWindow):
             self.stack_handler.associate_with_experiment(self.experiment)
             self.data_analyzer = DataAnalyzer(self.experiment)
 
-            # Auto-load image stack if experiment has a saved path
-            try:
-                path = self.experiment.image_stack_path
-                if path:
-
-                    def load_stack_and_roi(p=path):
-                        self.viewer.set_stack(p)
-                        if self.experiment.roi:
-                            roi = self.experiment.roi
-                            x = roi.get("x", 0)
-                            y = roi.get("y", 0)
-                            width = roi.get("width", 0)
-                            height = roi.get("height", 0)
-
-                            def load_roi_and_plot():
-                                self.viewer.set_roi(x, y, width, height)
-                                self._on_roi_selected(x, y, width, height)
-
-                            QTimer.singleShot(200, load_roi_and_plot)
-
-                    QTimer.singleShot(0, load_stack_and_roi)
-            except Exception:
-                pass
+            # Auto-load image stack/ROI if experiment has saved data
+            self._auto_load_experiment_data()
 
             # Show the window again
             self.show()
