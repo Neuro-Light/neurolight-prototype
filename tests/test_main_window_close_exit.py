@@ -54,18 +54,18 @@ def main_window(app, sample_experiment):
     mock_viewer.stackLoaded.connect = Mock()
     mock_viewer.roiSelected = Mock()
     mock_viewer.roiSelected.connect = Mock()
-    
+
     mock_analysis = Mock()
     mock_roi_plot_widget = Mock()
     mock_analysis.roi_plot_widget = mock_roi_plot_widget
     mock_analysis.get_roi_plot_widget = Mock(return_value=mock_roi_plot_widget)
-    
+
     mock_stack_handler = Mock()
     mock_stack_handler.files = []
     mock_stack_handler.associate_with_experiment = Mock()
-    
+
     mock_data_analyzer = Mock()
-    
+
     # Patch the heavy UI components to return mocks
     with (
         patch("ui.main_window.ImageViewer", return_value=mock_viewer),
