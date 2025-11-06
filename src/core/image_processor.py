@@ -91,20 +91,28 @@ class ImageProcessor:
             # For ellipse, create a mask and apply it
             # Create coordinate grids
             h, w = y2 - y1, x2 - x1
-            center_x, center_y = w / 2, h / 2
-            radius_x, radius_y = w / 2, h / 2
+            center_x, center_y = w / 2.0, h / 2.0
+            radius_x, radius_y = w / 2.0, h / 2.0
 
+            # Safety check: avoid division by zero
+            if radius_x <= 0 or radius_y <= 0:
+                raise ValueError("Invalid ellipse dimensions: width and height must be > 0")
+
+            # Create coordinate grids for mask
             y_coords, x_coords = np.ogrid[:h, :w]
-            mask = ((x_coords - center_x) / radius_x) ** 2 + (
-                (y_coords - center_y) / radius_y
-            ) ** 2 <= 1
+            # Calculate ellipse mask: pixels inside ellipse have value <= 1
+            dx = (x_coords - center_x) / radius_x
+            dy = (y_coords - center_y) / radius_y
+            mask = (dx * dx + dy * dy) <= 1.0
 
-            # Extract rectangular region first
+            # Extract rectangular region first (this contains the actual image data)
             if image.ndim == 2:
                 cropped = image[y1:y2, x1:x2].copy()
-                cropped[~mask] = 0  # Set outside ellipse to 0
+                # Only set pixels OUTSIDE the ellipse to 0 (preserve pixels inside)
+                cropped[~mask] = 0
             else:
                 cropped = image[y1:y2, x1:x2].copy()
+                # Apply mask to each channel
                 for c in range(image.shape[2]):
                     cropped[:, :, c][~mask] = 0
             return cropped
@@ -157,16 +165,23 @@ class ImageProcessor:
         if shape == "ellipse":
             # Create ellipse mask
             h, w = y2 - y1, x2 - x1
-            center_x, center_y = w / 2, h / 2
-            radius_x, radius_y = w / 2, h / 2
+            center_x, center_y = w / 2.0, h / 2.0
+            radius_x, radius_y = w / 2.0, h / 2.0
 
+            # Safety check: avoid division by zero
+            if radius_x <= 0 or radius_y <= 0:
+                raise ValueError("Invalid ellipse dimensions: width and height must be > 0")
+
+            # Create coordinate grids for mask
             y_coords, x_coords = np.ogrid[:h, :w]
-            mask = ((x_coords - center_x) / radius_x) ** 2 + (
-                (y_coords - center_y) / radius_y
-            ) ** 2 <= 1
+            # Calculate ellipse mask: pixels inside ellipse have value <= 1
+            dx = (x_coords - center_x) / radius_x
+            dy = (y_coords - center_y) / radius_y
+            mask = (dx * dx + dy * dy) <= 1.0
 
-            # Crop each frame
+            # Crop each frame - extract the rectangular region first
             cropped_stack = image_stack[:, y1:y2, x1:x2].copy()
+            # Apply mask to each frame: set pixels OUTSIDE ellipse to 0 (preserve pixels inside)
             for t in range(num_frames):
                 cropped_stack[t][~mask] = 0
             return cropped_stack
