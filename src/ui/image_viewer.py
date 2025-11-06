@@ -225,7 +225,7 @@ class ImageViewer(QWidget):
         # convert the image to float32 and saves it as a new array
         # copy=false stop the automatic saving of this array from astype(),
         # if step to true then astype() will save a array if one value is off.
-        new_arr = arr.astype(np.float32, copy=False)
+        new_arr = arr.astype(np.float32, copy=True)
 
         # If/else statement normailizing the image
         # if the orignal image data type is not a float
