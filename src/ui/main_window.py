@@ -360,19 +360,20 @@ class MainWindow(QMainWindow):
             )
             return
 
-        # Ellipse ROI
+        # Extract and validate ROI coordinates
         roi_tuple = self.viewer.current_roi
-        # Validate ROI tuple contains numeric values (works even with -O flag)
-        if not isinstance(roi_tuple, (tuple, list)) or len(roi_tuple) != 4:
-            raise ValueError(
-                f"ROI must be a 4-element tuple or list, got {type(roi_tuple)}"
+        try:
+            x = int(roi_tuple[0])
+            y = int(roi_tuple[1])
+            width = int(roi_tuple[2])
+            height = int(roi_tuple[3])
+        except (ValueError, TypeError, IndexError):
+            QMessageBox.warning(
+                self,
+                "Invalid ROI",
+                "ROI coordinates must be numeric values.",
             )
-        if not all(isinstance(v, (int, float)) for v in roi_tuple):
-            raise ValueError("ROI tuple must contain numbers (int or float)")
-        x = int(roi_tuple[0])  # type: ignore
-        y = int(roi_tuple[1])  # type: ignore
-        width = int(roi_tuple[2])  # type: ignore
-        height = int(roi_tuple[3])  # type: ignore
+            return
         roi_shape = getattr(self.viewer, "roi_shape", "ellipse")
 
         # Ask user for output directory
