@@ -219,6 +219,7 @@ class MainWindow(QMainWindow):
             # Reassociate handler and data analyzer with new experiment
             self.stack_handler.associate_with_experiment(self.experiment)
             self.data_analyzer = DataAnalyzer(self.experiment)
+            self.image_processor = ImageProcessor(self.experiment)
 
             # Auto-load image stack/ROI if experiment has saved data
             self._auto_load_experiment_data()
@@ -361,9 +362,13 @@ class MainWindow(QMainWindow):
 
         # Ellipse ROI
         roi_tuple = self.viewer.current_roi
-        assert all(isinstance(v, (int, float)) for v in roi_tuple), (
-            "ROI tuple must contain numbers"
-        )
+        # Validate ROI tuple contains numeric values (works even with -O flag)
+        if not isinstance(roi_tuple, (tuple, list)) or len(roi_tuple) != 4:
+            raise ValueError(
+                f"ROI must be a 4-element tuple or list, got {type(roi_tuple)}"
+            )
+        if not all(isinstance(v, (int, float)) for v in roi_tuple):
+            raise ValueError("ROI tuple must contain numbers (int or float)")
         x = int(roi_tuple[0])  # type: ignore
         y = int(roi_tuple[1])  # type: ignore
         width = int(roi_tuple[2])  # type: ignore
