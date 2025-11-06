@@ -230,22 +230,22 @@ class ImageViewer(QWidget):
         # If/else statement normailizing the image
         # if the orignal image data type is not a float
         # This is because float and integer data type normalize differently
-        if not np.issubdtype(orig_dtype, np.float32):
-            # normalizing a integer image
-            # the array divided by the max color value
-            # the value would be between 0 and 1 for every pixel in the image
-            new_arr = new_arr / np.iinfo(orig_dtype).max
-        # else the data type is a float
-        else:
+        if np.issubdtype(orig_dtype, np.floating):
             # get the minimum pixel value in the array
             min_pixel = np.min(new_arr)
             #get the pixel range
-            pixel_range = np.max(new_arr) - np.min(new_arr) 
+            pixel_range = np.max(new_arr) - min_pixel 
             # check to see if the pixel arent all equal
             # cant divied by 0 
             if pixel_range != 0:
                 # normalize all the images in the array
                 new_arr = (new_arr - min_pixel) / pixel_range
+        # else the data type is a float
+        else:
+            # normalizing a integer image
+            # the array divided by the max color value
+            # the value would be between 0 and 1 for every pixel in the image
+            new_arr = new_arr / np.iinfo(orig_dtype).max
 
         #creating exposure and contrast scalers
         exposure = 2 ** (ev / 50)               
@@ -266,8 +266,6 @@ class ImageViewer(QWidget):
 
     # Function to convert to 8 bits
     def _ensure_uint8(self, arr: np.ndarray) -> np.ndarray:
-        # Do the contrast and exposure edits first
-        new_arr = self._apply_adjustments(arr)
         # convert to unit 8... 8 bit
         unit_8 = cv2.convertScaleAbs(new_arr, alpha=255.0, beta=0.0)
         #return the 8 bit image
