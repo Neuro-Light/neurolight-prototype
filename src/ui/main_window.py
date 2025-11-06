@@ -307,14 +307,14 @@ class MainWindow(QMainWindow):
         # Store coordinates in image pixel space (not display coordinates)
         # These coordinates are saved to the .nexp file and remain constant
         roi_shape = getattr(self.viewer, "roi_shape", "ellipse")
-        
+
         # Save ellipse ROI
         self.experiment.roi = {
             "x": x,
             "y": y,
             "width": width,
             "height": height,
-            "shape": "ellipse",
+            "shape": roi_shape,
         }
         if self.current_experiment_path:
             try:
@@ -350,12 +350,15 @@ class MainWindow(QMainWindow):
             return
 
         # Get ROI coordinates
-        if not isinstance(self.viewer.current_roi, tuple) or len(self.viewer.current_roi) != 4:
+        if (
+            not isinstance(self.viewer.current_roi, tuple)
+            or len(self.viewer.current_roi) != 4
+        ):
             QMessageBox.warning(
                 self, "Invalid ROI", "Current ROI is not valid for cropping."
             )
             return
-        
+
         # Ellipse ROI
         roi_tuple = self.viewer.current_roi
         assert all(isinstance(v, (int, float)) for v in roi_tuple), (
