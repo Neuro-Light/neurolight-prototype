@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import cv2
 import numpy as np
@@ -34,11 +34,13 @@ class ImageProcessor:
         return out
 
     def log_processing_step(self, operation: str, params: Dict[str, Any]) -> None:
-        self.experiment.processing_history.append({
-            "timestamp": self.experiment.modified_date.isoformat(),
-            "operation": operation,
-            "parameters": params,
-        })
+        self.experiment.processing_history.append(
+            {
+                "timestamp": self.experiment.modified_date.isoformat(),
+                "operation": operation,
+                "parameters": params,
+            }
+        )
 
     # Placeholders for future expansion
     def detect_objects(self, image: np.ndarray):  # YOLOv8 placeholder
@@ -47,3 +49,127 @@ class ImageProcessor:
     def extract_features(self, image: np.ndarray):
         return {}
 
+    def crop_image(
+        self,
+        image: np.ndarray,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        shape: str = "rectangle",
+        polygon_points: Optional[list] = None,
+    ) -> np.ndarray:
+        """
+        Crop an image using ROI coordinates.
+
+        Args:
+            image: Input image as numpy array
+            x: X coordinate of ROI top-left corner
+            y: Y coordinate of ROI top-left corner
+            width: Width of ROI
+            height: Height of ROI
+            shape: "rectangle" or "ellipse"
+
+        Returns:
+            Cropped image as numpy array
+        """
+        if image.ndim < 2:
+            raise ValueError("Image must be at least 2D")
+
+        img_height, img_width = image.shape[0], image.shape[1]
+
+        # Clamp ROI to image bounds
+        x1 = max(0, int(x))
+        y1 = max(0, int(y))
+        x2 = min(img_width, x1 + int(width))
+        y2 = min(img_height, y1 + int(height))
+
+        if x2 <= x1 or y2 <= y1:
+            raise ValueError("Invalid ROI dimensions")
+
+        if shape == "ellipse":
+            # For ellipse, create a mask and apply it
+            # Create coordinate grids
+            h, w = y2 - y1, x2 - x1
+            center_x, center_y = w / 2, h / 2
+            radius_x, radius_y = w / 2, h / 2
+
+            y_coords, x_coords = np.ogrid[:h, :w]
+            mask = ((x_coords - center_x) / radius_x) ** 2 + (
+                (y_coords - center_y) / radius_y
+            ) ** 2 <= 1
+
+            # Extract rectangular region first
+            if image.ndim == 2:
+                cropped = image[y1:y2, x1:x2].copy()
+                cropped[~mask] = 0  # Set outside ellipse to 0
+            else:
+                cropped = image[y1:y2, x1:x2].copy()
+                for c in range(image.shape[2]):
+                    cropped[:, :, c][~mask] = 0
+            return cropped
+        else:
+            # Rectangle crop
+            if image.ndim == 2:
+                return image[y1:y2, x1:x2].copy()
+            else:
+                return image[y1:y2, x1:x2, :].copy()
+
+    def crop_image_stack(
+        self,
+        image_stack: np.ndarray,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        shape: str = "rectangle",
+        polygon_points: Optional[list] = None,
+    ) -> np.ndarray:
+        """
+        Crop an image stack (3D array: frames, height, width) using ROI coordinates.
+
+        Args:
+            image_stack: 3D numpy array (frames, height, width)
+            x: X coordinate of ROI top-left corner
+            y: Y coordinate of ROI top-left corner
+            width: Width of ROI
+            height: Height of ROI
+            shape: "rectangle" or "ellipse"
+
+        Returns:
+            Cropped image stack as numpy array
+        """
+        if image_stack.ndim != 3:
+            raise ValueError("Image stack must be 3D (frames, height, width)")
+
+        num_frames = image_stack.shape[0]
+        img_height, img_width = image_stack.shape[1], image_stack.shape[2]
+
+        # Clamp ROI to image bounds
+        x1 = max(0, int(x))
+        y1 = max(0, int(y))
+        x2 = min(img_width, x1 + int(width))
+        y2 = min(img_height, y1 + int(height))
+
+        if x2 <= x1 or y2 <= y1:
+            raise ValueError("Invalid ROI dimensions")
+
+        if shape == "ellipse":
+            # Create ellipse mask
+            h, w = y2 - y1, x2 - x1
+            center_x, center_y = w / 2, h / 2
+            radius_x, radius_y = w / 2, h / 2
+
+            y_coords, x_coords = np.ogrid[:h, :w]
+            mask = ((x_coords - center_x) / radius_x) ** 2 + (
+                (y_coords - center_y) / radius_y
+            ) ** 2 <= 1
+
+            # Crop each frame
+            cropped_stack = image_stack[:, y1:y2, x1:x2].copy()
+            for t in range(num_frames):
+                cropped_stack[t][~mask] = 0
+            return cropped_stack
+        else:
+            # Rectangle crop
+            return image_stack[:, y1:y2, x1:x2].copy()

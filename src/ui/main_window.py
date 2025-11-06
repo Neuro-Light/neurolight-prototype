@@ -20,6 +20,7 @@ import numpy as np
 
 from core.experiment_manager import Experiment, ExperimentManager
 from core.data_analyzer import DataAnalyzer
+from core.image_processor import ImageProcessor
 from utils.file_handler import ImageStackHandler
 from ui.image_viewer import ImageViewer
 from ui.analysis_panel import AnalysisPanel
@@ -69,6 +70,9 @@ class MainWindow(QMainWindow):
 
         menubar.addMenu("Edit").addAction("Experiment Settings")
         tools_menu = menubar.addMenu("Tools")
+        crop_roi_action = QAction("Crop ROI", self)
+        crop_roi_action.triggered.connect(self._crop_roi)
+        tools_menu.addAction(crop_roi_action)
         tools_menu.addAction("Generate GIF")
         tools_menu.addAction("Run Analysis")
         menubar.addMenu("Help").addAction("About")
@@ -89,8 +93,9 @@ class MainWindow(QMainWindow):
         self.viewer.roiSelected.connect(self._on_roi_selected)
         self.viewer.roiSelected.connect(self._save_roi_to_experiment)
 
-        # Create data analyzer
+        # Create data analyzer and image processor
         self.data_analyzer = DataAnalyzer(self.experiment)
+        self.image_processor = ImageProcessor(self.experiment)
 
         splitter.addWidget(self.viewer)
         splitter.addWidget(self.analysis)
@@ -116,9 +121,12 @@ class MainWindow(QMainWindow):
                         y = roi.get("y", 0)
                         width = roi.get("width", 0)
                         height = roi.get("height", 0)
+                        roi_shape = roi.get("shape", "ellipse")
 
                         def load_roi_and_plot():
+                            # Load ROI with the correct shape from saved data
                             self.viewer.set_roi(x, y, width, height)
+                            self.viewer.roi_shape = roi_shape
                             self._on_roi_selected(x, y, width, height)
 
                         QTimer.singleShot(200, load_roi_and_plot)
@@ -298,7 +306,16 @@ class MainWindow(QMainWindow):
         """
         # Store coordinates in image pixel space (not display coordinates)
         # These coordinates are saved to the .nexp file and remain constant
-        self.experiment.roi = {"x": x, "y": y, "width": width, "height": height}
+        roi_shape = getattr(self.viewer, "roi_shape", "ellipse")
+        
+        # Save ellipse ROI
+        self.experiment.roi = {
+            "x": x,
+            "y": y,
+            "width": width,
+            "height": height,
+            "shape": "ellipse",
+        }
         if self.current_experiment_path:
             try:
                 # Persist ROI to .nexp file immediately
@@ -317,3 +334,89 @@ class MainWindow(QMainWindow):
             self.manager.save_experiment(self.experiment, self.current_experiment_path)
         except Exception:
             pass
+
+    def _crop_roi(self) -> None:
+        """Crop the image stack using the current ROI and save cropped images."""
+        if self.viewer.current_roi is None:
+            QMessageBox.warning(
+                self, "No ROI Selected", "Please select an ROI before cropping."
+            )
+            return
+
+        if self.stack_handler.get_image_count() == 0:
+            QMessageBox.warning(
+                self, "No Images", "Please load an image stack before cropping."
+            )
+            return
+
+        # Get ROI coordinates
+        if not isinstance(self.viewer.current_roi, tuple) or len(self.viewer.current_roi) != 4:
+            QMessageBox.warning(
+                self, "Invalid ROI", "Current ROI is not valid for cropping."
+            )
+            return
+        
+        # Ellipse ROI
+        roi_tuple = self.viewer.current_roi
+        assert all(isinstance(v, (int, float)) for v in roi_tuple), (
+            "ROI tuple must contain numbers"
+        )
+        x = int(roi_tuple[0])  # type: ignore
+        y = int(roi_tuple[1])  # type: ignore
+        width = int(roi_tuple[2])  # type: ignore
+        height = int(roi_tuple[3])  # type: ignore
+        roi_shape = getattr(self.viewer, "roi_shape", "ellipse")
+
+        # Ask user for output directory
+        output_dir = QFileDialog.getExistingDirectory(
+            self, "Select Output Directory for Cropped Images", ""
+        )
+        if not output_dir:
+            return
+
+        try:
+            # Load all frames
+            frame_data = self.stack_handler.get_all_frames_as_array()
+            if frame_data is None:
+                QMessageBox.critical(self, "Error", "Failed to load image stack.")
+                return
+
+            # Crop the stack
+            cropped_stack = self.image_processor.crop_image_stack(
+                frame_data, x, y, width, height, roi_shape, None
+            )
+
+            # Save cropped images
+            from pathlib import Path
+            import cv2
+
+            output_path = Path(output_dir)
+            base_name = (
+                Path(self.experiment.name).stem if self.experiment.name else "cropped"
+            )
+
+            num_frames = cropped_stack.shape[0]
+            for i in range(num_frames):
+                frame = cropped_stack[i]
+                # Normalize to 0-255 if needed
+                if frame.dtype != np.uint8:
+                    frame_min = np.min(frame)
+                    frame_max = np.max(frame)
+                    if frame_max > frame_min:
+                        frame = (
+                            (frame - frame_min) / (frame_max - frame_min) * 255
+                        ).astype(np.uint8)
+                    else:
+                        frame = frame.astype(np.uint8)
+
+                output_file = output_path / f"{base_name}_cropped_{i:04d}.tif"
+                cv2.imwrite(str(output_file), frame)
+
+            QMessageBox.information(
+                self,
+                "Crop Complete",
+                f"Successfully cropped and saved {num_frames} images to:\n{output_dir}",
+            )
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to crop images:\n{str(e)}")
