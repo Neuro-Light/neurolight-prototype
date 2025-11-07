@@ -27,6 +27,8 @@ from utils.file_handler import ImageStackHandler
 from ui.image_viewer import ImageViewer
 from ui.analysis_panel import AnalysisPanel
 from ui.startup_dialog import StartupDialog
+from ui.alignment_dialog import AlignmentDialog
+from ui.alignment_progress_dialog import AlignmentProgressDialog
 
 
 class MainWindow(QMainWindow):
@@ -78,6 +80,11 @@ class MainWindow(QMainWindow):
         crop_action = QAction("Crop Stack to ROI", self)
         crop_action.triggered.connect(self._crop_stack_to_roi)
         tools_menu.addAction(crop_action)
+        
+        # Add alignment action
+        align_action = QAction("Align Images", self)
+        align_action.triggered.connect(self._align_images)
+        tools_menu.addAction(align_action)
         
         tools_menu.addAction("Generate GIF")
         tools_menu.addAction("Run Analysis")
@@ -455,3 +462,209 @@ class MainWindow(QMainWindow):
                 "Cropping Error",
                 f"Failed to crop image stack:\n{str(e)}"
             )
+    
+    def _align_images(self) -> None:
+        """Align images in the stack."""
+        # Check if images are loaded
+        num_frames = self.stack_handler.get_image_count()
+        if num_frames == 0:
+            QMessageBox.warning(
+                self,
+                "No Images",
+                "No image stack loaded. Please load an image stack first."
+            )
+            return
+        
+        if num_frames < 2:
+            QMessageBox.warning(
+                self,
+                "Not Enough Images",
+                "At least 2 images are required for alignment."
+            )
+            return
+        
+        # Show alignment dialog
+        dialog = AlignmentDialog(self, num_frames)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        
+        params = dialog.get_parameters()
+        
+        # Show progress dialog (we align num_frames - 1 frames, skipping reference)
+        frames_to_align = num_frames - 1
+        progress_dialog = AlignmentProgressDialog(self, frames_to_align)
+        progress_dialog.show()
+        QApplication.processEvents()
+        
+        try:
+            # Load all frames
+            progress_dialog.update_progress(0, frames_to_align, "Loading image stack...")
+            QApplication.processEvents()
+            
+            frame_data = self.stack_handler.get_all_frames_as_array()
+            if frame_data is None:
+                progress_dialog.close()
+                QMessageBox.warning(
+                    self,
+                    "No Image Data",
+                    "Failed to load image stack."
+                )
+                return
+            
+            # Progress callback
+            def progress_callback(completed: int, total: int, message: str):
+                progress_dialog.update_progress(completed, total, message)
+                QApplication.processEvents()
+                return not progress_dialog.is_cancelled()
+            
+            # Perform alignment
+            progress_dialog.update_progress(0, frames_to_align, "Starting alignment...")
+            QApplication.processEvents()
+            
+            aligned_stack, transformation_matrices, confidence_scores = (
+                self.image_processor.align_image_stack(
+                    frame_data,
+                    reference_index=params["reference_index"],
+                    method=params["method"],
+                    warp_mode=params["warp_mode"],
+                    progress_callback=progress_callback
+                )
+            )
+            
+            if progress_dialog.is_cancelled():
+                progress_dialog.close()
+                return
+            
+            # Check alignment quality
+            avg_confidence = sum(confidence_scores) / len(confidence_scores)
+            low_confidence_frames = [
+                i for i, conf in enumerate(confidence_scores) if conf < 0.5
+            ]
+            
+            progress_dialog.close()
+            
+            # Show alignment results
+            result_message = (
+                f"Alignment complete!\n\n"
+                f"Average confidence: {avg_confidence:.2%}\n"
+                f"Frames with low confidence (<50%): {len(low_confidence_frames)}"
+            )
+            
+            if low_confidence_frames:
+                result_message += f"\n\nLow confidence frames: {low_confidence_frames[:10]}"
+                if len(low_confidence_frames) > 10:
+                    result_message += f" (+{len(low_confidence_frames) - 10} more)"
+            
+            reply = QMessageBox.question(
+                self,
+                "Alignment Complete",
+                result_message + "\n\nWould you like to save the aligned images?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if reply == QMessageBox.Yes:
+                # Ask user for output directory
+                output_dir = QFileDialog.getExistingDirectory(
+                    self,
+                    "Select Output Directory for Aligned Stack",
+                    ""
+                )
+                if not output_dir:
+                    return
+                
+                # Save aligned images
+                self._save_aligned_stack(
+                    aligned_stack,
+                    transformation_matrices,
+                    confidence_scores,
+                    output_dir,
+                    params
+                )
+                
+                # Ask if user wants to load aligned images
+                load_reply = QMessageBox.question(
+                    self,
+                    "Load Aligned Images?",
+                    "Would you like to load the aligned images into the viewer?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+                
+                if load_reply == QMessageBox.Yes:
+                    self.viewer.set_stack(output_dir)
+            
+        except Exception as e:
+            progress_dialog.close()
+            QMessageBox.critical(
+                self,
+                "Alignment Error",
+                f"Failed to align images:\n{str(e)}"
+            )
+    
+    def _save_aligned_stack(
+        self,
+        aligned_stack: np.ndarray,
+        transformation_matrices: list,
+        confidence_scores: list,
+        output_dir: str,
+        params: dict
+    ) -> None:
+        """Save aligned image stack to disk."""
+        from PIL import Image
+        import json
+        
+        output_path = Path(output_dir)
+        
+        # Save aligned images
+        for i, aligned_frame in enumerate(aligned_stack):
+            # Generate output filename
+            if i < len(self.stack_handler.files):
+                original_name = Path(self.stack_handler.files[i]).stem
+                output_file = output_path / f"{original_name}_aligned.tif"
+            else:
+                output_file = output_path / f"frame_{i:04d}_aligned.tif"
+            
+            # Convert frame to appropriate format for saving
+            if aligned_frame.dtype != np.uint8 and aligned_frame.dtype != np.uint16:
+                # Normalize to uint16 for better precision
+                frame_min = np.min(aligned_frame)
+                frame_max = np.max(aligned_frame)
+                
+                if frame_max > frame_min:
+                    # Scale to 0-65535 range
+                    normalized = (aligned_frame - frame_min) / (frame_max - frame_min)
+                    aligned_frame = (normalized * 65535).astype(np.uint16)
+                else:
+                    aligned_frame = np.full_like(aligned_frame, frame_min, dtype=np.uint16)
+            
+            # Save frame
+            img = Image.fromarray(aligned_frame)
+            img.save(str(output_file))
+        
+        # Save transformation matrices and confidence scores as JSON
+        transform_data = {
+            "reference_index": params.get("reference_index", 0),
+            "method": params.get("method", "ecc"),
+            "warp_mode": params.get("warp_mode", "euclidean"),
+            "num_frames": len(aligned_stack),
+            "transformations": [
+                {
+                    "frame_index": i,
+                    "matrix": matrix.tolist() if matrix is not None else None,
+                    "confidence": float(conf)
+                }
+                for i, (matrix, conf) in enumerate(zip(transformation_matrices, confidence_scores))
+            ]
+        }
+        
+        transform_file = output_path / "alignment_transforms.json"
+        with open(transform_file, 'w') as f:
+            json.dump(transform_data, f, indent=2)
+        
+        QMessageBox.information(
+            self,
+            "Save Complete",
+            f"Aligned {len(aligned_stack)} images saved to {output_dir}\n"
+            f"Transformation matrices saved to {transform_file.name}"
+        )
