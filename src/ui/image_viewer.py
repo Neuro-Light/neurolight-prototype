@@ -6,7 +6,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from PySide6.QtCore import Qt, Signal, QRect, QPoint
-from PySide6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QBrush
+from PySide6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QBrush, QIcon
 from PySide6.QtWidgets import (
     QLabel,
     QSlider,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QPushButton,
     QHBoxLayout,
+    QStyle,
 )
 
 from utils.file_handler import ImageStackHandler
@@ -80,20 +81,10 @@ class ImageViewer(QWidget):
         self.image_label.mouseReleaseEvent = self._on_mouse_release
         
         # Upload button (visible when no images loaded)
-        self.upload_btn = QPushButton("Upload Images")
-        self.upload_btn.setFixedSize(200, 60)
-        self.upload_btn.setStyleSheet("""
-            QPushButton {
-                font-size: 16px;
-                font-weight: bold;
-                background-color: #4CAF50;
-                color: white;
-                border-radius: 8px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-        """)
+        self.upload_btn = QPushButton("Open Images")
+        # Add standard Qt file open icon
+        icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon)
+        self.upload_btn.setIcon(icon)
         self.upload_btn.clicked.connect(self._open_upload_dialog)
         
         # Container for image label with upload button overlay
