@@ -430,8 +430,14 @@ class MainWindow(QMainWindow):
                         normalized = (cropped_frame - frame_min) / (frame_max - frame_min)
                         cropped_frame = (normalized * 255).astype(np.uint8)
                     else:
-                        # Constant frame - just convert to uint8
-                        cropped_frame = np.full_like(cropped_frame, frame_min, dtype=np.uint8)
+                        # Constant frame - convert to uint8 with proper scaling
+                        if np.issubdtype(cropped_frame.dtype, np.floating):
+                            # For float dtypes, scale to 0-255 range
+                            uint8_value = np.clip(np.round(frame_min * 255), 0, 255).astype(np.uint8)
+                        else:
+                            # For integer dtypes, just clip to 0-255
+                            uint8_value = np.clip(frame_min, 0, 255).astype(np.uint8)
+                        cropped_frame = np.full_like(cropped_frame, uint8_value, dtype=np.uint8)
                 
                 # Save frame
                 img = Image.fromarray(cropped_frame)
