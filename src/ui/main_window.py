@@ -419,6 +419,20 @@ class MainWindow(QMainWindow):
                 else:
                     output_file = output_path / f"frame_{i:04d}_cropped.tif"
                 
+                # Convert frame to uint8 if needed
+                if cropped_frame.dtype != np.uint8:
+                    # Normalize to 0-255 range
+                    frame_min = np.min(cropped_frame)
+                    frame_max = np.max(cropped_frame)
+                    
+                    if frame_max > frame_min:
+                        # Scale to 0-255
+                        normalized = (cropped_frame - frame_min) / (frame_max - frame_min)
+                        cropped_frame = (normalized * 255).astype(np.uint8)
+                    else:
+                        # Constant frame - just convert to uint8
+                        cropped_frame = np.full_like(cropped_frame, frame_min, dtype=np.uint8)
+                
                 # Save frame
                 img = Image.fromarray(cropped_frame)
                 img.save(str(output_file))
