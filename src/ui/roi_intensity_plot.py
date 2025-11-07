@@ -108,7 +108,7 @@ class ROIIntensityPlotWidget(QWidget):
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "Save Intensity Data",
-            f"{self.experiment.name}_roi_intensity_data.csv",
+            f"{experiment_name}_roi_intensity_data.csv",
             "CSV Files (*.csv)"
         )
         
