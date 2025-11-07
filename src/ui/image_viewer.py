@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from typing import Optional
+from typing import Optional, Tuple
 from pathlib import Path
 
 import numpy as np
 from PySide6.QtCore import Qt, Signal, QRect, QPoint
-from PySide6.QtGui import QImage, QPixmap, QPainter, QPen
+from PySide6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QBrush
 from PySide6.QtWidgets import (
     QLabel,
     QSlider,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from utils.file_handler import ImageStackHandler
+from core.roi import ROI, ROIShape, ROIHandle
 
 
 class _LRUCache:
@@ -41,7 +42,8 @@ class _LRUCache:
 
 class ImageViewer(QWidget):
     stackLoaded = Signal(str)
-    roiSelected = Signal(int, int, int, int)  # x, y, width, height
+    roiSelected = Signal(object)  # Emits ROI object
+    roiChanged = Signal(object)  # Emits ROI object when adjusted
 
     def __init__(self, handler: ImageStackHandler) -> None:
         super().__init__()
@@ -51,28 +53,72 @@ class ImageViewer(QWidget):
 
         # ROI selection state
         self.roi_selection_mode = False
+        self.roi_adjustment_mode = False  # User must explicitly enable adjustment
         self.roi_start_point = None
         self.roi_end_point = None
-        self.current_roi = None
+        self.current_roi: Optional[ROI] = None
+        self.selected_shape = ROIShape.ELLIPSE  # Only ellipse shape supported
+        
+        # ROI adjustment state
+        self.active_handle = ROIHandle.NONE
+        self.last_mouse_pos = None
+        self.can_adjust_roi = False  # Only true when user clicks "Adjust ROI"
 
         self.filename_label = QLabel("Load image to see data") #label for user to see if no image are selected
         self.filename_label.setAlignment(Qt.AlignCenter)
         self.filename_label.setWordWrap(True)
         self.filename_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.image_label = QLabel("Drop TIF files or open a folder…")
+        
+        # Create image display area with upload button
+        self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setMinimumSize(320, 240)
         self.image_label.setMouseTracking(True)
         self.image_label.mousePressEvent = self._on_mouse_press
         self.image_label.mouseMoveEvent = self._on_mouse_move
         self.image_label.mouseReleaseEvent = self._on_mouse_release
+        
+        # Upload button (visible when no images loaded)
+        self.upload_btn = QPushButton("Upload Images")
+        self.upload_btn.setFixedSize(200, 60)
+        self.upload_btn.setStyleSheet("""
+            QPushButton {
+                font-size: 16px;
+                font-weight: bold;
+                background-color: #4CAF50;
+                color: white;
+                border-radius: 8px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        self.upload_btn.clicked.connect(self._open_upload_dialog)
+        
+        # Container for image label with upload button overlay
+        self.image_container = QWidget()
+        image_layout = QVBoxLayout(self.image_container)
+        image_layout.setContentsMargins(0, 0, 0, 0)
+        image_layout.addWidget(self.image_label)
+        
+        # Overlay upload button on image label
+        self.upload_btn.setParent(self.image_label)
+        self.upload_btn.show()
+        
+        # Schedule button centering after layout is complete
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._center_upload_button)
 
         self.prev_btn = QPushButton("Previous")
         self.next_btn = QPushButton("Next")
         self.roi_btn = QPushButton("Select ROI")
+        self.adjust_roi_btn = QPushButton("Adjust ROI")
+        self.adjust_roi_btn.setVisible(False)  # Hidden until ROI exists
+        
         self.prev_btn.clicked.connect(self.prev_image)
         self.next_btn.clicked.connect(self.next_image)
         self.roi_btn.clicked.connect(self._toggle_roi_mode)
+        self.adjust_roi_btn.clicked.connect(self._toggle_adjustment_mode)
 
         self.slider = QSlider(Qt.Horizontal)
         self.slider.valueChanged.connect(self._on_slider)
@@ -81,10 +127,11 @@ class ImageViewer(QWidget):
         nav.addWidget(self.prev_btn)
         nav.addWidget(self.next_btn)
         nav.addWidget(self.roi_btn)
+        nav.addWidget(self.adjust_roi_btn)
 
         layout = QVBoxLayout(self)
         # Image gets most of the space (stretch factor 1)
-        layout.addWidget(self.image_label, 1)
+        layout.addWidget(self.image_container, 1)
         layout.addLayout(nav)
         layout.addWidget(self.slider)
         # Metadata label should be compact (stretch factor 0, max height)
@@ -98,6 +145,11 @@ class ImageViewer(QWidget):
         self.slider.setRange(0, max(0, self.handler.get_image_count() - 1))
         self.index = 0
         self._show_current()
+        
+        # Hide upload button when images are loaded
+        if self.handler.get_image_count() > 0:
+            self.upload_btn.hide()
+        
         # Determine directory path and emit
         directory: Optional[str] = None
         if isinstance(files, (list, tuple)) and files:
@@ -121,12 +173,26 @@ class ImageViewer(QWidget):
         self.cache = _LRUCache(20)
         self.current_roi = None
         self.roi_selection_mode = False
+        self.roi_adjustment_mode = False
+        self.can_adjust_roi = False
         self.roi_start_point = None
         self.roi_end_point = None
+        self.active_handle = ROIHandle.NONE
+        self.last_mouse_pos = None
         # Reset UI labels and slider
-        self.image_label.setText("Drop TIF files or open a folder…")
+        self.image_label.clear()
         self.filename_label.setText("Load image to see data")
         self.slider.setRange(0, 0)
+        self._update_roi_button_text()
+        self.adjust_roi_btn.setVisible(False)
+        # Re-enable all controls
+        self.prev_btn.setEnabled(True)
+        self.next_btn.setEnabled(True)
+        self.slider.setEnabled(True)
+        self.roi_btn.setEnabled(True)
+        # Show upload button again
+        self.upload_btn.show()
+        self._center_upload_button()
 
     def dragEnterEvent(self, event) -> None:  # noqa: N802
         md = event.mimeData()
@@ -140,11 +206,28 @@ class ImageViewer(QWidget):
         paths = [u.toLocalFile() for u in urls]
         if not paths:
             return
+        
         # If a single directory dropped, use directory
         if len(paths) == 1 and Path(paths[0]).is_dir():
             self.set_stack(paths[0])
         else:
-            self.set_stack(paths)
+            # Filter to only allow TIF and GIF files
+            allowed_extensions = {'.tif', '.tiff', '.gif'}
+            filtered_paths = [
+                p for p in paths 
+                if Path(p).suffix.lower() in allowed_extensions
+            ]
+            
+            if filtered_paths:
+                self.set_stack(filtered_paths)
+            else:
+                # Show message if no valid files were dropped
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.warning(
+                    self,
+                    "Invalid Files",
+                    "Only TIF and GIF files are supported."
+                )
 
     def _numpy_to_qimage(self, arr: np.ndarray) -> QImage:
         if arr.ndim == 2:
@@ -167,8 +250,16 @@ class ImageViewer(QWidget):
     def _show_current(self) -> None:
         count = self.handler.get_image_count()
         if count == 0:
-            self.image_label.setText("No images loaded")
+            self.image_label.clear()
             self.filename_label.setText("Load image to see data")
+            # Make sure upload button is visible and centered
+            if not self.upload_btn.isVisible():
+                self.upload_btn.show()
+                # Delay centering to ensure layout is complete
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(10, self._center_upload_button)
+            else:
+                self._center_upload_button()
             return
         img = self.cache.get(self.index)
         if img is None:
@@ -181,13 +272,8 @@ class ImageViewer(QWidget):
         )
 
         # ============================================================
-        # ROI FIX: Draw ROI selection rectangle during selection mode
+        # ROI: Draw ROI selection during selection mode
         # ============================================================
-        # FIX DETAILS:
-        # - ROI coordinates are stored in ORIGINAL IMAGE PIXEL SPACE (not widget/display space)
-        # - This ensures ROI stays fixed to the image region regardless of window resizing
-        # - When drawing, we recalculate scale from the ACTUAL scaled pixmap size (not label size)
-        # - This prevents the ROI from moving when the pane is resized
         if (
             self.roi_selection_mode
             and self.roi_start_point is not None
@@ -201,98 +287,73 @@ class ImageViewer(QWidget):
                 original_height, original_width = img.shape[0], img.shape[1]
                 label_size = self.image_label.size()
 
-                # ROI FIX: Calculate aspect ratio to determine which dimension constrains scaling
-                # This determines whether width or height of the label determines the scale factor
                 label_aspect = label_size.width() / label_size.height()
                 original_aspect = original_width / original_height
 
-                # ROI FIX: Calculate scale from ACTUAL scaled pixmap dimensions (not label size)
-                # This is critical - we use scaled_pix.height()/width() directly because:
-                # 1. The pixmap is already scaled to fit the label while maintaining aspect ratio
-                # 2. Using the pixmap size ensures we get the correct scale regardless of window size
-                # 3. This prevents ROI drift when resizing the window
                 if label_aspect > original_aspect:
-                    # Label is wider than image - height constrains the scale
                     scale = scaled_pix.height() / original_height
                 else:
-                    # Label is taller than image - width constrains the scale
                     scale = scaled_pix.width() / original_width
 
-                # ROI FIX: ROI coordinates are in ORIGINAL IMAGE SPACE (from mouse event conversion)
-                # These were converted from mouse coordinates to image pixel coordinates in
-                # _on_mouse_press/_on_mouse_move/_on_mouse_release methods
                 x1 = min(self.roi_start_point.x(), self.roi_end_point.x())
                 y1 = min(self.roi_start_point.y(), self.roi_end_point.y())
                 x2 = max(self.roi_start_point.x(), self.roi_end_point.x())
                 y2 = max(self.roi_start_point.y(), self.roi_end_point.y())
 
-                # ROI FIX: Convert from image pixel coordinates to scaled display coordinates
-                # Multiply by the scale factor to get the correct display position
-                # The +1 ensures we include both endpoints in the selection
                 x1_scaled = int(x1 * scale)
                 y1_scaled = int(y1 * scale)
                 w_scaled = int((x2 - x1 + 1) * scale)
                 h_scaled = int((y2 - y1 + 1) * scale)
 
-                # ROI FIX: Draw directly on the scaled pixmap (no offset needed)
-                # Since we're drawing on the pixmap itself (not the label), we don't need
-                # to account for centering offsets. The pixmap will be centered by Qt when displayed.
-                painter.drawRect(x1_scaled, y1_scaled, w_scaled, h_scaled)
+                # Draw ellipse shape
+                painter.drawEllipse(x1_scaled, y1_scaled, w_scaled, h_scaled)
             painter.end()
 
         # ============================================================
-        # ROI FIX: Draw saved ROI rectangle when not in selection mode
+        # ROI: Draw saved ROI when not in selection mode
         # ============================================================
-        # FIX DETAILS:
-        # - This is the key fix for keeping ROI anchored to image region on resize
-        # - ROI is stored in image pixel coordinates (self.current_roi)
-        # - Scale is recalculated EVERY time _show_current() is called (including on resize)
-        # - This ensures ROI position updates correctly when window/pane size changes
         elif self.current_roi is not None and not self.roi_selection_mode:
             painter = QPainter(scaled_pix)
             pen = QPen(Qt.green, 2, Qt.SolidLine)
             painter.setPen(pen)
 
-            # Get original image dimensions (in pixels)
             if img.ndim >= 2:
                 original_height, original_width = img.shape[0], img.shape[1]
                 label_size = self.image_label.size()
 
-                # ROI FIX: Calculate aspect ratio to determine scaling constraint
-                # This tells us whether the label is wider or taller relative to the image
                 label_aspect = label_size.width() / label_size.height()
                 original_aspect = original_width / original_height
 
-                # ROI FIX: Calculate scale from ACTUAL scaled pixmap size (not label size)
-                # CRITICAL: We use scaled_pix.height()/width() NOT label_size because:
-                # - The pixmap is already scaled to fit the label with aspect ratio preserved
-                # - The pixmap size reflects the actual displayed image size
-                # - This ensures correct scale calculation even when window is resized
-                # - Using label_size would cause incorrect offsets and ROI drift
                 if label_aspect > original_aspect:
-                    # Label is wider than image - height constrains the scale
                     scale = scaled_pix.height() / original_height
                 else:
-                    # Label is taller than image - width constrains the scale
                     scale = scaled_pix.width() / original_width
 
-                # ROI FIX: ROI coordinates stored in ORIGINAL IMAGE PIXEL SPACE
-                # These coordinates are saved to the .nexp file and remain constant
-                # regardless of window size or image scaling
-                x, y, w, h = self.current_roi
-                
-                # ROI FIX: Convert from image pixel coordinates to scaled display coordinates
-                # Multiply by the dynamically calculated scale factor
-                # This conversion happens every time the image is redrawn (including on resize)
-                x_scaled = int(x * scale)
-                y_scaled = int(y * scale)
-                w_scaled = int(w * scale)
-                h_scaled = int(h * scale)
+                x_scaled = int(self.current_roi.x * scale)
+                y_scaled = int(self.current_roi.y * scale)
+                w_scaled = int(self.current_roi.width * scale)
+                h_scaled = int(self.current_roi.height * scale)
 
-                # ROI FIX: Draw directly on the scaled pixmap (no centering offset needed)
-                # Since we're drawing on the pixmap itself, coordinates are relative to the pixmap
-                # Qt will handle centering the pixmap in the label if needed
-                painter.drawRect(x_scaled, y_scaled, w_scaled, h_scaled)
+                # Draw ellipse shape
+                painter.drawEllipse(x_scaled, y_scaled, w_scaled, h_scaled)
+                
+                # Draw adjustment handles only when in adjustment mode
+                if self.can_adjust_roi:
+                    handle_size = 10
+                    # Use cyan/yellow color for adjustment handles
+                    painter.setPen(QPen(QColor(255, 255, 0), 2))  # Yellow border
+                    painter.setBrush(QBrush(QColor(0, 255, 255)))  # Cyan fill
+                    
+                    # Corner handles
+                    corners = [
+                        (x_scaled, y_scaled),
+                        (x_scaled + w_scaled, y_scaled),
+                        (x_scaled, y_scaled + h_scaled),
+                        (x_scaled + w_scaled, y_scaled + h_scaled),
+                    ]
+                    for cx, cy in corners:
+                        painter.drawRect(cx - handle_size//2, cy - handle_size//2, 
+                                       handle_size, handle_size)
             painter.end()
 
         self.image_label.setPixmap(scaled_pix)
@@ -307,6 +368,40 @@ class ImageViewer(QWidget):
         # at the correct position for the new display size
         super().resizeEvent(event)
         self._show_current()
+        # Center upload button when window resizes
+        if self.upload_btn.isVisible():
+            self._center_upload_button()
+    
+    def _center_upload_button(self) -> None:
+        """Center the upload button in the image label."""
+        if not self.upload_btn.isVisible():
+            return
+            
+        # Use parent (image_label) size for centering
+        parent_width = self.image_label.width()
+        parent_height = self.image_label.height()
+        btn_width = self.upload_btn.width()
+        btn_height = self.upload_btn.height()
+        
+        # Calculate center position
+        x = max(0, (parent_width - btn_width) // 2)
+        y = max(0, (parent_height - btn_height) // 2)
+        
+        self.upload_btn.move(x, y)
+    
+    def _open_upload_dialog(self) -> None:
+        """Open file dialog to select TIF or GIF images."""
+        from PySide6.QtWidgets import QFileDialog
+        
+        files, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Select Image Files",
+            "",
+            "Image Files (*.tif *.tiff *.gif);;TIF Files (*.tif *.tiff);;GIF Files (*.gif);;All Files (*.*)"
+        )
+        
+        if files:
+            self.set_stack(files)
 
     def prev_image(self) -> None:
         if self.index > 0:
@@ -330,181 +425,244 @@ class ImageViewer(QWidget):
 
     def _toggle_roi_mode(self) -> None:
         """Toggle ROI selection mode."""
+        from PySide6.QtWidgets import QMessageBox
+        
+        # If we're not in selection mode and there's an existing ROI, confirm before starting new selection
+        if not self.roi_selection_mode and self.current_roi is not None:
+            reply = QMessageBox.question(
+                self,
+                "Create New ROI",
+                "Creating a new ROI will replace the existing one. Continue?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply == QMessageBox.No:
+                return
+            # Clear existing ROI to start fresh
+            self.current_roi = None
+            self.can_adjust_roi = False
+            self.adjust_roi_btn.setVisible(False)
+        
         self.roi_selection_mode = not self.roi_selection_mode
-        self.roi_btn.setText("Cancel ROI" if self.roi_selection_mode else "Select ROI")
+        self.roi_btn.setText("Cancel ROI" if self.roi_selection_mode else (
+            "New ROI" if self.current_roi is not None else "Select ROI"
+        ))
         if not self.roi_selection_mode:
             self.roi_start_point = None
             self.roi_end_point = None
-            self.current_roi = None
-            self._show_current()
+        self._show_current()
+    
+    def _toggle_adjustment_mode(self) -> None:
+        """Toggle ROI adjustment mode."""
+        self.can_adjust_roi = not self.can_adjust_roi
+        self.adjust_roi_btn.setText("Finish Adjusting" if self.can_adjust_roi else "Adjust ROI")
+        
+        # Disable/enable other controls based on adjustment mode
+        self.prev_btn.setEnabled(not self.can_adjust_roi)
+        self.next_btn.setEnabled(not self.can_adjust_roi)
+        self.slider.setEnabled(not self.can_adjust_roi)
+        self.roi_btn.setEnabled(not self.can_adjust_roi)
+        
+        # Exit adjustment mode properly
+        if not self.can_adjust_roi:
+            self.roi_adjustment_mode = False
+            self.active_handle = ROIHandle.NONE
+            self.last_mouse_pos = None
+            # Emit final ROI state after adjustment is complete
+            if self.current_roi is not None:
+                self.roiSelected.emit(self.current_roi)
+        
+        self._show_current()
+    
+    def _update_roi_button_text(self) -> None:
+        """Update ROI button text based on current state."""
+        if self.roi_selection_mode:
+            self.roi_btn.setText("Cancel ROI")
+        elif self.current_roi is not None:
+            self.roi_btn.setText("New ROI")
+        else:
+            self.roi_btn.setText("Select ROI")
+        
+        # Show/hide adjust button based on ROI existence
+        if self.current_roi is not None and not self.roi_selection_mode:
+            self.adjust_roi_btn.setVisible(True)
+        else:
+            self.adjust_roi_btn.setVisible(False)
 
-    def _on_mouse_press(self, event) -> None:
-        """Handle mouse press for ROI selection."""
-        if self.roi_selection_mode and event.button() == Qt.LeftButton:
-            # Get the actual image dimensions
-            img = self.cache.get(self.index)
-            if img is None:
+    def _get_image_coords_from_mouse(self, event) -> Optional[Tuple[int, int, float]]:
+        """Convert mouse coordinates to image coordinates and return scale."""
+        # Check if there are any images loaded
+        if self.handler.get_image_count() == 0:
+            return None
+        
+        img = self.cache.get(self.index)
+        if img is None:
+            try:
                 img = self.handler.get_image_at_index(self.index)
-            if img is not None and img.ndim >= 2:
-                original_height, original_width = img.shape[0], img.shape[1]
+            except (IndexError, Exception):
+                return None
+        if img is None or img.ndim < 2:
+            return None
+            
+        original_height, original_width = img.shape[0], img.shape[1]
+        label_size = self.image_label.size()
+        pixmap = self.image_label.pixmap()
+        
+        if not pixmap:
+            return None
+            
+        scaled_pixmap_size = pixmap.size()
+        label_aspect = label_size.width() / label_size.height()
+        original_aspect = original_width / original_height
 
-                # Get label and scaled pixmap sizes
-                label_size = self.image_label.size()
-                pixmap = self.image_label.pixmap()
-                if pixmap:
-                    scaled_pixmap_size = pixmap.size()
+        if label_aspect > original_aspect:
+            scale = scaled_pixmap_size.height() / original_height
+        else:
+            scale = scaled_pixmap_size.width() / original_width
 
-                    # Calculate aspect ratio scaling
-                    label_aspect = label_size.width() / label_size.height()
-                    original_aspect = original_width / original_height
+        mouse_x = event.position().x()
+        mouse_y = event.position().y()
+        offset_x = (label_size.width() - scaled_pixmap_size.width()) / 2
+        offset_y = (label_size.height() - scaled_pixmap_size.height()) / 2
 
-                    # Determine actual scaled dimensions (with aspect ratio preserved)
-                    if label_aspect > original_aspect:
-                        # Label is wider - height determines scale
-                        scale = scaled_pixmap_size.height() / original_height
-                    else:
-                        # Label is taller - width determines scale
-                        scale = scaled_pixmap_size.width() / original_width
-
-                    # Get mouse position relative to label
-                    mouse_x = event.position().x()
-                    mouse_y = event.position().y()
-
-                    # Account for centering if image doesn't fill entire label
-                    offset_x = (label_size.width() - scaled_pixmap_size.width()) / 2
-                    offset_y = (label_size.height() - scaled_pixmap_size.height()) / 2
-
-                    # Convert to original image coordinates
-                    x = int((mouse_x - offset_x) / scale)
-                    y = int((mouse_y - offset_y) / scale)
-
-                    # Clamp to image bounds
-                    x = max(0, min(original_width - 1, x))
-                    y = max(0, min(original_height - 1, y))
-
-                    self.roi_start_point = QPoint(x, y)
-                    self.roi_end_point = QPoint(x, y)
+        x = int((mouse_x - offset_x) / scale)
+        y = int((mouse_y - offset_y) / scale)
+        x = max(0, min(original_width - 1, x))
+        y = max(0, min(original_height - 1, y))
+        
+        return (x, y, scale)
+    
+    def _on_mouse_press(self, event) -> None:
+        """Handle mouse press for ROI selection and adjustment."""
+        if event.button() != Qt.LeftButton:
+            return
+        
+        # Don't process mouse events if no images loaded
+        if self.handler.get_image_count() == 0:
+            return
+            
+        coords = self._get_image_coords_from_mouse(event)
+        if coords is None:
+            return
+        x, y, scale = coords
+        
+        # Check if adjusting existing ROI (only if adjustment mode is enabled)
+        if self.current_roi is not None and not self.roi_selection_mode and self.can_adjust_roi:
+            # Check which handle was clicked
+            handle_size_image = int(10 / scale)  # Convert handle size to image coords
+            self.active_handle = self.current_roi.get_handle_at_point(x, y, handle_size_image)
+            if self.active_handle != ROIHandle.NONE:
+                self.roi_adjustment_mode = True
+                self.last_mouse_pos = QPoint(x, y)
+                return
+        
+        # Otherwise, start new ROI selection
+        if self.roi_selection_mode:
+            self.roi_start_point = QPoint(x, y)
+            self.roi_end_point = QPoint(x, y)
 
     def _on_mouse_move(self, event) -> None:
-        """Handle mouse move for ROI selection."""
-        if self.roi_selection_mode and self.roi_start_point is not None:
+        """Handle mouse move for ROI selection and adjustment."""
+        # Don't process mouse events if no images loaded
+        if self.handler.get_image_count() == 0:
+            return
+            
+        coords = self._get_image_coords_from_mouse(event)
+        if coords is None:
+            return
+        x, y, _ = coords
+        
+        # Handle ROI adjustment (only if adjustment mode is enabled)
+        if self.roi_adjustment_mode and self.last_mouse_pos is not None and self.can_adjust_roi:
             img = self.cache.get(self.index)
             if img is None:
                 img = self.handler.get_image_at_index(self.index)
             if img is not None and img.ndim >= 2:
                 original_height, original_width = img.shape[0], img.shape[1]
-
-                label_size = self.image_label.size()
-                pixmap = self.image_label.pixmap()
-                if pixmap:
-                    scaled_pixmap_size = pixmap.size()
-
-                    # Calculate aspect ratio scaling
-                    label_aspect = label_size.width() / label_size.height()
-                    original_aspect = original_width / original_height
-
-                    if label_aspect > original_aspect:
-                        scale = scaled_pixmap_size.height() / original_height
-                    else:
-                        scale = scaled_pixmap_size.width() / original_width
-
-                    mouse_x = event.position().x()
-                    mouse_y = event.position().y()
-
-                    offset_x = (label_size.width() - scaled_pixmap_size.width()) / 2
-                    offset_y = (label_size.height() - scaled_pixmap_size.height()) / 2
-
-                    x = int((mouse_x - offset_x) / scale)
-                    y = int((mouse_y - offset_y) / scale)
-
-                    # Clamp to image bounds
-                    x = max(0, min(original_width - 1, x))
-                    y = max(0, min(original_height - 1, y))
-
-                    self.roi_end_point = QPoint(x, y)
-                    self._show_current()
+                
+                dx = x - self.last_mouse_pos.x()
+                dy = y - self.last_mouse_pos.y()
+                
+                self.current_roi.adjust_with_handle(
+                    self.active_handle, dx, dy, original_width, original_height
+                )
+                
+                self.last_mouse_pos = QPoint(x, y)
+                self._show_current()
+                # Emit change signal for live updates
+                self.roiChanged.emit(self.current_roi)
+        
+        # Handle new ROI selection
+        elif self.roi_selection_mode and self.roi_start_point is not None:
+            self.roi_end_point = QPoint(x, y)
+            self._show_current()
 
     def _on_mouse_release(self, event) -> None:
-        """Handle mouse release for ROI selection."""
-        if (
-            self.roi_selection_mode
-            and event.button() == Qt.LeftButton
-            and self.roi_start_point is not None
-        ):
-            img = self.cache.get(self.index)
-            if img is None:
-                img = self.handler.get_image_at_index(self.index)
-            if img is not None and img.ndim >= 2:
-                original_height, original_width = img.shape[0], img.shape[1]
+        """Handle mouse release for ROI selection and adjustment."""
+        if event.button() != Qt.LeftButton:
+            return
+        
+        # Don't process mouse events if no images loaded
+        if self.handler.get_image_count() == 0:
+            return
+        
+        # Handle ROI adjustment completion
+        if self.roi_adjustment_mode:
+            self.roi_adjustment_mode = False
+            self.active_handle = ROIHandle.NONE
+            self.last_mouse_pos = None
+            # Emit final ROI after adjustment
+            if self.current_roi is not None:
+                self.roiSelected.emit(self.current_roi)
+            return
+        
+        # Handle new ROI selection completion
+        if self.roi_selection_mode and self.roi_start_point is not None:
+            coords = self._get_image_coords_from_mouse(event)
+            if coords is None:
+                return
+            x, y, _ = coords
+            
+            self.roi_end_point = QPoint(x, y)
 
-                label_size = self.image_label.size()
-                pixmap = self.image_label.pixmap()
-                if pixmap:
-                    scaled_pixmap_size = pixmap.size()
+            # Create ROI in image coordinates
+            x1 = min(self.roi_start_point.x(), self.roi_end_point.x())
+            y1 = min(self.roi_start_point.y(), self.roi_end_point.y())
+            x2 = max(self.roi_start_point.x(), self.roi_end_point.x())
+            y2 = max(self.roi_start_point.y(), self.roi_end_point.y())
 
-                    # Calculate aspect ratio scaling
-                    label_aspect = label_size.width() / label_size.height()
-                    original_aspect = original_width / original_height
+            width = max(1, x2 - x1 + 1)
+            height = max(1, y2 - y1 + 1)
 
-                    if label_aspect > original_aspect:
-                        scale = scaled_pixmap_size.height() / original_height
-                    else:
-                        scale = scaled_pixmap_size.width() / original_width
+            # Create ROI object with selected shape
+            self.current_roi = ROI(x=x1, y=y1, width=width, height=height, shape=self.selected_shape)
 
-                    mouse_x = event.position().x()
-                    mouse_y = event.position().y()
+            # Emit signal with ROI object
+            self.roiSelected.emit(self.current_roi)
 
-                    offset_x = (label_size.width() - scaled_pixmap_size.width()) / 2
-                    offset_y = (label_size.height() - scaled_pixmap_size.height()) / 2
+            # Exit selection mode
+            self.roi_selection_mode = False
+            self.roi_start_point = None
+            self.roi_end_point = None
+            self.can_adjust_roi = False  # Start with adjustment disabled
+            self._update_roi_button_text()  # This will show the Adjust ROI button
+            self._show_current()
 
-                    x = int((mouse_x - offset_x) / scale)
-                    y = int((mouse_y - offset_y) / scale)
-
-                    # Clamp to image bounds
-                    x = max(0, min(original_width - 1, x))
-                    y = max(0, min(original_height - 1, y))
-
-                    self.roi_end_point = QPoint(x, y)
-
-                    # Create ROI rectangle in image coordinates
-                    x1 = min(self.roi_start_point.x(), self.roi_end_point.x())
-                    y1 = min(self.roi_start_point.y(), self.roi_end_point.y())
-                    x2 = max(self.roi_start_point.x(), self.roi_end_point.x())
-                    y2 = max(self.roi_start_point.y(), self.roi_end_point.y())
-
-                    # Add 1 to include both endpoints (inclusive selection)
-                    # Python slicing [x1:x2] is exclusive of x2, so we need width = x2-x1+1
-                    width = max(1, x2 - x1 + 1)
-                    height = max(1, y2 - y1 + 1)
-
-                    # Store ROI in image coordinates
-                    self.current_roi = (x1, y1, width, height)
-
-                    # Emit signal with ROI coordinates (x, y, width, height)
-                    self.roiSelected.emit(x1, y1, width, height)
-
-                    # Exit selection mode without clearing the ROI
-                    self.roi_selection_mode = False
-                    self.roi_btn.setText("Select ROI")
-                    # Clear temporary selection points but keep current_roi
-                    self.roi_start_point = None
-                    self.roi_end_point = None
-
-                    self._show_current()
-
-    def get_current_roi(self) -> Optional[tuple]:
-        """Get the current ROI coordinates (x, y, width, height) in image space."""
+    def get_current_roi(self) -> Optional[ROI]:
+        """Get the current ROI object."""
         return self.current_roi
 
-    def set_roi(self, x: int, y: int, width: int, height: int) -> None:
+    def set_roi(self, roi: ROI) -> None:
         """
-        ROI FIX: Set the ROI from saved coordinates (x, y, width, height) in image space.
+        Set the ROI from a saved ROI object.
         
         This method is called when loading an experiment with a saved ROI.
         The coordinates are in original image pixel space, not display/widget space.
-        This ensures the ROI stays fixed to the correct image region regardless of
-        window size or scaling.
         """
-        self.current_roi = (x, y, width, height)
+        self.current_roi = roi
+        self.can_adjust_roi = False  # Start with adjustment disabled
+        # Update button text
+        self._update_roi_button_text()
         # Redraw to show the ROI with correct scaling
         self._show_current()
+
