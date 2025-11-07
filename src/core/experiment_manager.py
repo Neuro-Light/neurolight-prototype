@@ -29,10 +29,11 @@ class Experiment:
         "processing": {"auto_save": True},
     })
     # Store ROI coordinates in image pixel space (not widget/display space)
-    # Format: {"x": int, "y": int, "width": int, "height": int}
+    # Format: {"x": int, "y": int, "width": int, "height": int, "shape": str}
+    # where shape is "ellipse" (rectangle kept for legacy compatibility only)
     # These coordinates are in original image pixels, ensuring ROI stays fixed to
     # the image region regardless of window size or scaling
-    roi: Optional[Dict[str, int]] = None
+    roi: Optional[Dict[str, Any]] = None
 
     def to_json(self) -> Dict[str, Any]:
         return {

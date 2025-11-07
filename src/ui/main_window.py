@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
@@ -20,6 +21,8 @@ import numpy as np
 
 from core.experiment_manager import Experiment, ExperimentManager
 from core.data_analyzer import DataAnalyzer
+from core.image_processor import ImageProcessor
+from core.roi import ROI, ROIShape
 from utils.file_handler import ImageStackHandler
 from ui.image_viewer import ImageViewer
 from ui.analysis_panel import AnalysisPanel
@@ -32,6 +35,7 @@ class MainWindow(QMainWindow):
         self.experiment = experiment
         self.manager = ExperimentManager()
         self.current_experiment_path: Optional[str] = None
+        self.image_processor = ImageProcessor(experiment)
 
         self.setWindowTitle(f"Neurolight - {self.experiment.name}")
         self.resize(1200, 800)
@@ -69,6 +73,12 @@ class MainWindow(QMainWindow):
 
         menubar.addMenu("Edit").addAction("Experiment Settings")
         tools_menu = menubar.addMenu("Tools")
+        
+        # Add crop action
+        crop_action = QAction("Crop Stack to ROI", self)
+        crop_action.triggered.connect(self._crop_stack_to_roi)
+        tools_menu.addAction(crop_action)
+        
         tools_menu.addAction("Generate GIF")
         tools_menu.addAction("Run Analysis")
         menubar.addMenu("Help").addAction("About")
@@ -111,15 +121,24 @@ class MainWindow(QMainWindow):
                 def load_stack_and_roi(p=path):
                     self.viewer.set_stack(p)
                     if self.experiment.roi:
-                        roi = self.experiment.roi
-                        x = roi.get("x", 0)
-                        y = roi.get("y", 0)
-                        width = roi.get("width", 0)
-                        height = roi.get("height", 0)
+                        roi_data = self.experiment.roi
+                        
+                        # Convert dict to ROI object
+                        try:
+                            roi = ROI.from_dict(roi_data)
+                        except Exception:
+                            # Fallback for malformed data - use same defaults as from_dict()
+                            roi = ROI(
+                                x=roi_data.get("x", 0),
+                                y=roi_data.get("y", 0),
+                                width=roi_data.get("width", 100),
+                                height=roi_data.get("height", 100),
+                                shape=ROIShape.ELLIPSE
+                            )
 
                         def load_roi_and_plot():
-                            self.viewer.set_roi(x, y, width, height)
-                            self._on_roi_selected(x, y, width, height)
+                            self.viewer.set_roi(roi)
+                            self._on_roi_selected(roi)
 
                         QTimer.singleShot(200, load_roi_and_plot)
 
@@ -154,8 +173,7 @@ class MainWindow(QMainWindow):
         # Save current ROI to experiment before saving
         current_roi = self.viewer.get_current_roi()
         if current_roi is not None:
-            x, y, width, height = current_roi
-            self.experiment.roi = {"x": x, "y": y, "width": width, "height": height}
+            self.experiment.roi = current_roi.to_dict()
         try:
             self.manager.save_experiment(self.experiment, self.current_experiment_path)
             QMessageBox.information(self, "Saved", "Experiment saved successfully.")
@@ -197,8 +215,7 @@ class MainWindow(QMainWindow):
         # Save current ROI to experiment before closing
         current_roi = self.viewer.get_current_roi()
         if current_roi is not None:
-            x, y, width, height = current_roi
-            self.experiment.roi = {"x": x, "y": y, "width": width, "height": height}
+            self.experiment.roi = current_roi.to_dict()
             # Save to file if we have a path
             if self.current_experiment_path:
                 try:
@@ -257,8 +274,7 @@ class MainWindow(QMainWindow):
             # Save current ROI to experiment before exiting
             current_roi = self.viewer.get_current_roi()
             if current_roi is not None:
-                x, y, width, height = current_roi
-                self.experiment.roi = {"x": x, "y": y, "width": width, "height": height}
+                self.experiment.roi = current_roi.to_dict()
                 # Save to file if we have a path
                 if self.current_experiment_path:
                     try:
@@ -269,7 +285,7 @@ class MainWindow(QMainWindow):
                         pass
             QApplication.quit()
 
-    def _on_roi_selected(self, x: int, y: int, width: int, height: int) -> None:
+    def _on_roi_selected(self, roi: ROI) -> None:
         """Handle ROI selection and extract intensity time series."""
         try:
             # Load all frames as numpy array (reusing Jupyter notebook approach)
@@ -297,13 +313,13 @@ class MainWindow(QMainWindow):
 
             # Extract ROI intensity time series
             intensity_data = self.data_analyzer.extract_roi_intensity_time_series(
-                frame_data, x, y, width, height
+                frame_data, roi.x, roi.y, roi.width, roi.height
             )
 
             # Plot in the ROI Intensity tab
             roi_plot_widget = self.analysis.get_roi_plot_widget()
             roi_plot_widget.plot_intensity_time_series(
-                intensity_data, (x, y, width, height)
+                intensity_data, (roi.x, roi.y, roi.width, roi.height)
             )
 
             # Switch to ROI Intensity tab
@@ -315,9 +331,9 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to analyze ROI:\n{str(e)}")
 
-    def _save_roi_to_experiment(self, x: int, y: int, width: int, height: int) -> None:
+    def _save_roi_to_experiment(self, roi: ROI) -> None:
         """
-        Save ROI coordinates to experiment and persist to .nexp file.
+        Save ROI to experiment and persist to .nexp file.
 
         This method is called when a user selects an ROI in the image viewer.
         Coordinates are in original image pixel space (not widget/display space).
@@ -328,9 +344,9 @@ class MainWindow(QMainWindow):
 
         The ROI is automatically saved to the .nexp file so it persists across sessions.
         """
-        # Store coordinates in image pixel space (not display coordinates)
+        # Store ROI in image pixel space (not display coordinates)
         # These coordinates are saved to the .nexp file and remain constant
-        self.experiment.roi = {"x": x, "y": y, "width": width, "height": height}
+        self.experiment.roi = roi.to_dict()
         if self.current_experiment_path:
             try:
                 # Persist ROI to .nexp file immediately
@@ -348,9 +364,94 @@ class MainWindow(QMainWindow):
         # Save current ROI to experiment before auto-saving
         current_roi = self.viewer.get_current_roi()
         if current_roi is not None:
-            x, y, width, height = current_roi
-            self.experiment.roi = {"x": x, "y": y, "width": width, "height": height}
+            self.experiment.roi = current_roi.to_dict()
         try:
             self.manager.save_experiment(self.experiment, self.current_experiment_path)
         except Exception:
             pass
+    
+    def _crop_stack_to_roi(self) -> None:
+        """Crop the image stack to the current ROI and save as new stack."""
+        current_roi = self.viewer.get_current_roi()
+        if current_roi is None:
+            QMessageBox.warning(
+                self,
+                "No ROI Selected",
+                "Please select an ROI before cropping."
+            )
+            return
+        
+        try:
+            # Load all frames
+            frame_data = self.stack_handler.get_all_frames_as_array()
+            if frame_data is None:
+                QMessageBox.warning(
+                    self,
+                    "No Image Data",
+                    "No image stack loaded."
+                )
+                return
+            
+            # Ask user for output directory
+            output_dir = QFileDialog.getExistingDirectory(
+                self,
+                "Select Output Directory for Cropped Stack",
+                ""
+            )
+            if not output_dir:
+                return
+            
+            # Crop stack
+            cropped_stack = self.image_processor.crop_stack_to_roi(
+                frame_data, current_roi, apply_mask=(current_roi.shape == ROIShape.ELLIPSE)
+            )
+            
+            # Save cropped frames
+            from PIL import Image
+            output_path = Path(output_dir)
+            original_files = self.stack_handler.files
+            
+            for i, cropped_frame in enumerate(cropped_stack):
+                # Generate output filename
+                if i < len(original_files):
+                    original_name = Path(original_files[i]).stem
+                    output_file = output_path / f"{original_name}_cropped.tif"
+                else:
+                    output_file = output_path / f"frame_{i:04d}_cropped.tif"
+                
+                # Convert frame to uint8 if needed
+                if cropped_frame.dtype != np.uint8:
+                    # Normalize to 0-255 range
+                    frame_min = np.min(cropped_frame)
+                    frame_max = np.max(cropped_frame)
+                    
+                    if frame_max > frame_min:
+                        # Scale to 0-255
+                        normalized = (cropped_frame - frame_min) / (frame_max - frame_min)
+                        cropped_frame = (normalized * 255).astype(np.uint8)
+                    else:
+                        # Constant frame - convert to uint8 with proper scaling
+                        if np.issubdtype(cropped_frame.dtype, np.floating):
+                            # For float dtypes, scale to 0-255 range
+                            uint8_value = np.clip(np.round(frame_min * 255), 0, 255).astype(np.uint8)
+                        else:
+                            # For integer dtypes, just clip to 0-255
+                            uint8_value = np.clip(frame_min, 0, 255).astype(np.uint8)
+                        cropped_frame = np.full_like(cropped_frame, uint8_value, dtype=np.uint8)
+                
+                # Save frame
+                img = Image.fromarray(cropped_frame)
+                img.save(str(output_file))
+            
+            QMessageBox.information(
+                self,
+                "Cropping Complete",
+                f"Cropped {len(cropped_stack)} frames to {output_dir}"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Cropping Error",
+                f"Failed to crop image stack:\n{str(e)}"
+            )
