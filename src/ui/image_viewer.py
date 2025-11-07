@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Optional
 from pathlib import Path
-
+import cv2
 import numpy as np
 from PySide6.QtCore import Qt, Signal, QRect, QPoint
 from PySide6.QtGui import QImage, QPixmap, QPainter, QPen
@@ -77,19 +77,58 @@ class ImageViewer(QWidget):
         self.slider = QSlider(Qt.Horizontal)
         self.slider.valueChanged.connect(self._on_slider)
 
+        ## Exposure/Contrast slider controls for the exposure
+        # Label text at inital load
+        self.exposure_label = QLabel("Exposure: 0")
+        # Adds the slider movement as a horizontal slider "vertical setting also"
+        self.exposure_slider = QSlider(Qt.Horizontal)
+        # Setting the value in the slider, set value to -100 - 100 for more accuracy
+        self.exposure_slider.setRange(-100, 100)
+        # The slider will start 0 at the load in
+        self.exposure_slider.setValue(0)
+        # Handle the changeing value for the exposure slider
+        self.exposure_slider.valueChanged.connect(self._on_adjustment_changed)
+
+        # Label text at inital load for the contrast
+        self.contrast_label = QLabel("Contrast: 0")
+        # Adds the slider movement as a horizontal slider "vertical setting also"
+        self.contrast_slider = QSlider(Qt.Horizontal)
+        # Setting the values in the slider, set value to -100 - 100 for more accuracy
+        self.contrast_slider.setRange(-100, 100)
+        # Slider will start at 0 on load in
+        self.contrast_slider.setValue(0)
+        #handle the changing value for the contrast slider
+        self.contrast_slider.valueChanged.connect(self._on_adjustment_changed)
+        
+
         nav = QHBoxLayout()
         nav.addWidget(self.prev_btn)
         nav.addWidget(self.next_btn)
         nav.addWidget(self.roi_btn)
+
+        # New box for the exposure and  contrast slider
+        adjustments_layout = QVBoxLayout()
+        # Add the label to the slider
+        adjustments_layout.addWidget(self.exposure_label)
+        # Add the slider to the container
+        adjustments_layout.addWidget(self.exposure_slider)
+        # Added the label to the slider
+        adjustments_layout.addWidget(self.contrast_label)
+        # Add the slider to the container
+        adjustments_layout.addWidget(self.contrast_slider)
 
         layout = QVBoxLayout(self)
         # Image gets most of the space (stretch factor 1)
         layout.addWidget(self.image_label, 1)
         layout.addLayout(nav)
         layout.addWidget(self.slider)
+        # Added the layout for the exposure and contrast
+        layout.addLayout(adjustments_layout)
         # Metadata label should be compact (stretch factor 0, max height)
         self.filename_label.setMaximumHeight(50)
         layout.addWidget(self.filename_label, 0)
+        # adjust the labels on sliders to go to 0 on load
+        self._update_adjustment_labels()
 
         self.setAcceptDrops(True)
 
@@ -164,6 +203,75 @@ class ImageViewer(QWidget):
                 return QImage(arr.data, w, h, 4 * w, QImage.Format_RGBA8888)
         raise ValueError("Unsupported image shape")
 
+    # Function to update the silder value so the user can see what value they have
+    def _update_adjustment_labels(self) -> None:
+        # For exposure
+        self.exposure_label.setText(f"Exposure: {self.exposure_slider.value()}")
+        # For contrast
+        self.contrast_label.setText(f"Contrast: {self.contrast_slider.value()}")
+
+    '''Next three function convert to 8 bit and do exposure and contrast
+    calculation. The order is a stated: Exposure/Contrast, then 8 bit converstion
+    This will preserve the appearance and will allow for more adjustment'''
+    #function to calculate teh amount of exposure and contrast the imahe
+    # should get based on the slider value input
+    def _apply_adjustments(self, arr: np.ndarray) -> np.ndarray:
+
+        # Set the exposure and contrast sliders value to ev and cv
+        ev = self.exposure_slider.value()
+        cv = self.contrast_slider.value()
+        #stores the orignal image data type
+        orig_dtype = arr.dtype
+        # convert the image to float32 and saves it as a new array
+        # copy=false stop the automatic saving of this array from astype(),
+        # if step to true then astype() will save a array if one value is off.
+        new_arr = arr.astype(np.float32, copy=True)
+        min_pixel = float(np.min(new_arr))
+        max_pixel = float(np.max(new_arr))
+        pixel_range = max_pixel - min_pixel
+        # check to see if the pixel arent all equal
+        # cant divied by 0 
+        if pixel_range != 0:
+            # normalize all the images in the array
+            new_arr = (new_arr - min_pixel) / pixel_range
+        else:
+            # if the orignal image data type is a integer image
+            # This is because float and integer data type normalize differently
+            if np.issubdtype(orig_dtype, np.integer):
+                #get the max out of the image arr
+                max_possible = float(np.iinfo(orig_dtype).max)
+                #normailze the image
+                new_arr = new_arr / max_possible
+            else:
+                #the image is normalized
+                new_arr = np.clip(new_arr, 0, 1)
+
+        #creating exposure and contrast scalers
+        exposure = 2 ** (ev / 50)               
+        contrast = 1 + (cv / 100) 
+        #0.5 to preserve the greyscale... if higher turns black...if lower turns white      
+        new_arr = ((new_arr - 0.5) * contrast + 0.5) * exposure
+        # this will set the max and min values to 0 to 1
+        # you will get more uniformed ranges in contrast and exposure
+        new_arr = np.clip(new_arr, 0, 1)
+        # return the normalized array with edits
+        return new_arr
+
+
+    def _on_adjustment_changed(self, _value: int) -> None:
+        self._update_adjustment_labels()
+        self._show_current()
+
+
+    # Function to convert to 8 bits
+    def _ensure_uint8(self, arr: np.ndarray) -> np.ndarray:
+        # Do the contrast and exposure edits first
+        new_arr = self._apply_adjustments(arr)
+        # convert to unit 8... 8 bit
+        unit_8 = cv2.convertScaleAbs(new_arr, alpha=255.0, beta=0.0)
+        #return the 8 bit image
+        return unit_8
+
     def _show_current(self) -> None:
         count = self.handler.get_image_count()
         if count == 0:
@@ -174,7 +282,9 @@ class ImageViewer(QWidget):
         if img is None:
             img = self.handler.get_image_at_index(self.index)
             self.cache.set(self.index, img)
-        qimg = self._numpy_to_qimage(img)
+        #show the 8 bit image on the workbench
+        preview_img = self._ensure_uint8(img)
+        qimg = self._numpy_to_qimage(preview_img)
         pix = QPixmap.fromImage(qimg)
         scaled_pix = pix.scaled(
             self.image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
