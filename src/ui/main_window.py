@@ -84,6 +84,7 @@ class MainWindow(QMainWindow):
 
         # Right panel: analysis dashboard
         self.analysis = AnalysisPanel()
+        self.analysis.get_roi_plot_widget().experiment = self.experiment
 
         # Connect ROI selection to analysis and saving
         self.viewer.roiSelected.connect(self._on_roi_selected)
