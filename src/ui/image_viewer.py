@@ -265,8 +265,10 @@ class ImageViewer(QWidget):
 
     # Function to convert to 8 bits
     def _ensure_uint8(self, arr: np.ndarray) -> np.ndarray:
+        # Do the contrast and exposure edits first
+        new_arr = self._apply_adjustments(arr)
         # convert to unit 8... 8 bit
-        unit_8 = cv2.convertScaleAbs(arr, alpha=255.0, beta=0.0)
+        unit_8 = cv2.convertScaleAbs(new_arr, alpha=255.0, beta=0.0)
         #return the 8 bit image
         return unit_8
 
