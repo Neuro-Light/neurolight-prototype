@@ -226,26 +226,25 @@ class ImageViewer(QWidget):
         # copy=false stop the automatic saving of this array from astype(),
         # if step to true then astype() will save a array if one value is off.
         new_arr = arr.astype(np.float32, copy=True)
-
-        # If/else statement normailizing the image
-        # if the orignal image data type is not a float
-        # This is because float and integer data type normalize differently
-        if np.issubdtype(orig_dtype, np.floating):
-            # get the minimum pixel value in the array
-            min_pixel = np.min(new_arr)
-            #get the pixel range
-            pixel_range = np.max(new_arr) - min_pixel 
-            # check to see if the pixel arent all equal
-            # cant divied by 0 
-            if pixel_range != 0:
-                # normalize all the images in the array
-                new_arr = (new_arr - min_pixel) / pixel_range
-        # else the data type is a float
+        min_pixel = float(np.min(new_arr))
+        max_pixel = float(np.max(new_arr))
+        pixel_range = max_pixel - min_pixel
+        # check to see if the pixel arent all equal
+        # cant divied by 0 
+        if pixel_range != 0:
+            # normalize all the images in the array
+            new_arr = (new_arr - min_pixel) / pixel_range
         else:
-            # normalizing a integer image
-            # the array divided by the max color value
-            # the value would be between 0 and 1 for every pixel in the image
-            new_arr = new_arr / np.iinfo(orig_dtype).max
+            # if the orignal image data type is a integer image
+            # This is because float and integer data type normalize differently
+            if np.issubdtype(orig_dtype, np.integer):
+                #get the max out of the image arr
+                max_possible = float(np.iinfo(orig_dtype).max)
+                #normailze the image
+                new_arr = new_arr / max_possible
+            else:
+                #the image is normalized
+                new_arr = np.clip(new_arr, 0, 1)
 
         #creating exposure and contrast scalers
         exposure = 2 ** (ev / 50)               
@@ -281,10 +280,8 @@ class ImageViewer(QWidget):
         if img is None:
             img = self.handler.get_image_at_index(self.index)
             self.cache.set(self.index, img)
-        #show the adjusted image on the workbench
-        adjusted_img = self._apply_adjustments(img)
         #show the 8 bit image on the workbench
-        preview_img = self._ensure_uint8(adjusted_img)
+        preview_img = self._ensure_uint8(img)
         qimg = self._numpy_to_qimage(preview_img)
         pix = QPixmap.fromImage(qimg)
         scaled_pix = pix.scaled(
