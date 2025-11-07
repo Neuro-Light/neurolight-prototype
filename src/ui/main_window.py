@@ -151,6 +151,11 @@ class MainWindow(QMainWindow):
         if not self.current_experiment_path:
             self._save_as()
             return
+        # Save current ROI to experiment before saving
+        current_roi = self.viewer.get_current_roi()
+        if current_roi is not None:
+            x, y, width, height = current_roi
+            self.experiment.roi = {"x": x, "y": y, "width": width, "height": height}
         try:
             self.manager.save_experiment(self.experiment, self.current_experiment_path)
             QMessageBox.information(self, "Saved", "Experiment saved successfully.")
@@ -188,6 +193,20 @@ class MainWindow(QMainWindow):
 
         if reply == QMessageBox.No:
             return
+
+        # Save current ROI to experiment before closing
+        current_roi = self.viewer.get_current_roi()
+        if current_roi is not None:
+            x, y, width, height = current_roi
+            self.experiment.roi = {"x": x, "y": y, "width": width, "height": height}
+            # Save to file if we have a path
+            if self.current_experiment_path:
+                try:
+                    self.manager.save_experiment(
+                        self.experiment, self.current_experiment_path
+                    )
+                except Exception:
+                    pass
 
         # Hide the main window
         self.hide()
@@ -235,6 +254,19 @@ class MainWindow(QMainWindow):
         )
 
         if reply == QMessageBox.Yes:
+            # Save current ROI to experiment before exiting
+            current_roi = self.viewer.get_current_roi()
+            if current_roi is not None:
+                x, y, width, height = current_roi
+                self.experiment.roi = {"x": x, "y": y, "width": width, "height": height}
+                # Save to file if we have a path
+                if self.current_experiment_path:
+                    try:
+                        self.manager.save_experiment(
+                            self.experiment, self.current_experiment_path
+                        )
+                    except Exception:
+                        pass
             QApplication.quit()
 
     def _on_roi_selected(self, x: int, y: int, width: int, height: int) -> None:
@@ -313,6 +345,11 @@ class MainWindow(QMainWindow):
             return
         if not self.current_experiment_path:
             return
+        # Save current ROI to experiment before auto-saving
+        current_roi = self.viewer.get_current_roi()
+        if current_roi is not None:
+            x, y, width, height = current_roi
+            self.experiment.roi = {"x": x, "y": y, "width": width, "height": height}
         try:
             self.manager.save_experiment(self.experiment, self.current_experiment_path)
         except Exception:
