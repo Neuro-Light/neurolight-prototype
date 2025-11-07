@@ -62,7 +62,7 @@ class AlignmentDialog(QDialog):
         layout.addWidget(method_group)
         
         # Warp mode selection (only for ECC)
-        warp_group = QGroupBox("Transformation Type")
+        self.warp_group = QGroupBox("Transformation Type")
         warp_layout = QFormLayout()
         
         self.warp_combo = QComboBox()
@@ -76,8 +76,8 @@ class AlignmentDialog(QDialog):
         self.warp_combo.currentIndexChanged.connect(self._on_warp_mode_changed)
         
         warp_layout.addRow("Transformation:", self.warp_combo)
-        warp_group.setLayout(warp_layout)
-        layout.addWidget(warp_group)
+        self.warp_group.setLayout(warp_layout)
+        layout.addWidget(self.warp_group)
         
         # Info label
         info_label = QLabel(
@@ -110,9 +110,7 @@ class AlignmentDialog(QDialog):
     
     def _update_warp_mode_visibility(self):
         # Warp mode only applies to ECC method
-        warp_group = self.findChild(QGroupBox, "Transformation Type")
-        if warp_group:
-            warp_group.setEnabled(self.method == "ecc")
+        self.warp_group.setEnabled(self.method == "ecc")
     
     def get_parameters(self) -> dict:
         """Get alignment parameters."""

@@ -511,10 +511,11 @@ class MainWindow(QMainWindow):
                 )
                 return
             
-            # Progress callback
-            def progress_callback(completed: int, total: int, message: str):
+            # Progress callback - returns False if cancelled
+            def progress_callback(completed: int, total: int, message: str) -> bool:
                 progress_dialog.update_progress(completed, total, message)
                 QApplication.processEvents()
+                # Return False if cancelled (to stop alignment), True to continue
                 return not progress_dialog.is_cancelled()
             
             # Perform alignment
@@ -531,8 +532,14 @@ class MainWindow(QMainWindow):
                 )
             )
             
+            # Check if alignment was cancelled
             if progress_dialog.is_cancelled():
                 progress_dialog.close()
+                QMessageBox.information(
+                    self,
+                    "Alignment Cancelled",
+                    "Image alignment was cancelled. No changes were saved."
+                )
                 return
             
             # Check alignment quality

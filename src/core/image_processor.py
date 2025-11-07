@@ -435,7 +435,7 @@ class ImageProcessor:
         reference_index: int = 0,
         method: str = "ecc",
         warp_mode: str = "euclidean",
-        progress_callback: Optional[Callable[[int, int, str], None]] = None
+        progress_callback: Optional[Callable[[int, int, str], bool]] = None
     ) -> Tuple[np.ndarray, List[np.ndarray], List[float]]:
         """
         Align a stack of images to a reference image.
@@ -495,14 +495,29 @@ class ImageProcessor:
         
         # Align each frame (in order, skipping reference)
         frames_processed = 0
+        cancelled = False
+        cancel_from_index: Optional[int] = None
+        
         for i in range(num_frames):
             if i == reference_index:
                 continue
             
-            frames_processed += 1
+            next_progress = frames_processed + 1
             if progress_callback:
-                progress_callback(frames_processed, num_frames - 1, f"Aligning frame {i+1}/{num_frames}")
+                should_continue = progress_callback(
+                    next_progress,
+                    num_frames - 1,
+                    f"Aligning frame {i+1}/{num_frames}"
+                )
+                # Check if callback returned False (cancellation requested)
+                # If callback doesn't return a value or returns None, assume continue
+                if should_continue is False:
+                    cancelled = True
+                    cancel_from_index = i
+                    frames_processed = next_progress
+                    break
             
+            frames_processed = next_progress
             image = image_stack[i]
             
             try:
@@ -524,6 +539,22 @@ class ImageProcessor:
                 else:
                     transformation_matrices[i] = np.eye(2, 3, dtype=np.float32)
                 confidence_scores[i] = 0.0
+        
+        # Handle cancellation - fill remaining frames with originals
+        if cancelled:
+            if cancel_from_index is not None:
+                for j in range(cancel_from_index, num_frames):
+                    if j == reference_index:
+                        continue
+                    aligned_stack[j] = image_stack[j].copy()
+                    if warp_mode_cv == cv2.MOTION_HOMOGRAPHY:
+                        transformation_matrices[j] = np.eye(3, 3, dtype=np.float32)
+                    else:
+                        transformation_matrices[j] = np.eye(2, 3, dtype=np.float32)
+                    confidence_scores[j] = 0.0
+            if progress_callback:
+                progress_callback(frames_processed, num_frames - 1, "Alignment cancelled")
+            return aligned_stack, transformation_matrices, confidence_scores
         
         if progress_callback:
             progress_callback(num_frames - 1, num_frames - 1, "Alignment complete")
