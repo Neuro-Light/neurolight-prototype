@@ -98,6 +98,9 @@ class MainWindow(QMainWindow):
         # Connect ROI selection to analysis and saving
         self.viewer.roiSelected.connect(self._on_roi_selected)
         self.viewer.roiSelected.connect(self._save_roi_to_experiment)
+        
+        # Connect display settings changes to saving
+        self.viewer.displaySettingsChanged.connect(self._save_display_settings)
 
         # Create data analyzer
         self.data_analyzer = DataAnalyzer(self.experiment)
@@ -113,13 +116,20 @@ class MainWindow(QMainWindow):
         self._auto_load_experiment_data()
 
     def _auto_load_experiment_data(self) -> None:
-        """Auto-load image stack and ROI if experiment has saved data."""
+        """Auto-load image stack, ROI, and display settings if experiment has saved data."""
         try:
             path = self.experiment.image_stack_path
             if path:
 
                 def load_stack_and_roi(p=path):
                     self.viewer.set_stack(p)
+                    # Load display settings (exposure, contrast)
+                    display_settings = self.experiment.settings.get("display", {})
+                    exposure = display_settings.get("exposure", 0)
+                    contrast = display_settings.get("contrast", 0)
+                    self.viewer.set_exposure(exposure)
+                    self.viewer.set_contrast(contrast)
+                    
                     if self.experiment.roi:
                         roi_data = self.experiment.roi
                         
@@ -174,6 +184,11 @@ class MainWindow(QMainWindow):
         current_roi = self.viewer.get_current_roi()
         if current_roi is not None:
             self.experiment.roi = current_roi.to_dict()
+        # Save current display settings before saving
+        if "display" not in self.experiment.settings:
+            self.experiment.settings["display"] = {}
+        self.experiment.settings["display"]["exposure"] = self.viewer.get_exposure()
+        self.experiment.settings["display"]["contrast"] = self.viewer.get_contrast()
         try:
             self.manager.save_experiment(self.experiment, self.current_experiment_path)
             QMessageBox.information(self, "Saved", "Experiment saved successfully.")
@@ -216,14 +231,19 @@ class MainWindow(QMainWindow):
         current_roi = self.viewer.get_current_roi()
         if current_roi is not None:
             self.experiment.roi = current_roi.to_dict()
-            # Save to file if we have a path
-            if self.current_experiment_path:
-                try:
-                    self.manager.save_experiment(
-                        self.experiment, self.current_experiment_path
-                    )
-                except Exception:
-                    pass
+        # Save current display settings before closing
+        if "display" not in self.experiment.settings:
+            self.experiment.settings["display"] = {}
+        self.experiment.settings["display"]["exposure"] = self.viewer.get_exposure()
+        self.experiment.settings["display"]["contrast"] = self.viewer.get_contrast()
+        # Save to file if we have a path
+        if self.current_experiment_path:
+            try:
+                self.manager.save_experiment(
+                    self.experiment, self.current_experiment_path
+                )
+            except Exception:
+                pass
 
         # Hide the main window
         self.hide()
@@ -248,7 +268,7 @@ class MainWindow(QMainWindow):
             self.stack_handler.associate_with_experiment(self.experiment)
             self.data_analyzer = DataAnalyzer(self.experiment)
 
-            # Auto-load image stack/ROI if experiment has saved data
+            # Auto-load image stack/ROI/display settings if experiment has saved data
             self._auto_load_experiment_data()
 
             # Show the window again
@@ -275,14 +295,19 @@ class MainWindow(QMainWindow):
             current_roi = self.viewer.get_current_roi()
             if current_roi is not None:
                 self.experiment.roi = current_roi.to_dict()
-                # Save to file if we have a path
-                if self.current_experiment_path:
-                    try:
-                        self.manager.save_experiment(
-                            self.experiment, self.current_experiment_path
-                        )
-                    except Exception:
-                        pass
+            # Save current display settings before exiting
+            if "display" not in self.experiment.settings:
+                self.experiment.settings["display"] = {}
+            self.experiment.settings["display"]["exposure"] = self.viewer.get_exposure()
+            self.experiment.settings["display"]["contrast"] = self.viewer.get_contrast()
+            # Save to file if we have a path
+            if self.current_experiment_path:
+                try:
+                    self.manager.save_experiment(
+                        self.experiment, self.current_experiment_path
+                    )
+                except Exception:
+                    pass
             QApplication.quit()
 
     def _on_roi_selected(self, roi: ROI) -> None:
@@ -331,6 +356,26 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to analyze ROI:\n{str(e)}")
 
+    def _save_display_settings(self, exposure: int, contrast: int) -> None:
+        """
+        Save display settings (exposure, contrast) to experiment and persist to .nexp file.
+        
+        This method is called when the user adjusts exposure or contrast sliders.
+        """
+        # Ensure display settings dict exists
+        if "display" not in self.experiment.settings:
+            self.experiment.settings["display"] = {}
+        self.experiment.settings["display"]["exposure"] = exposure
+        self.experiment.settings["display"]["contrast"] = contrast
+        # Persist to file if we have a path
+        if self.current_experiment_path:
+            try:
+                self.manager.save_experiment(
+                    self.experiment, self.current_experiment_path
+                )
+            except Exception:
+                pass
+
     def _save_roi_to_experiment(self, roi: ROI) -> None:
         """
         Save ROI to experiment and persist to .nexp file.
@@ -365,6 +410,11 @@ class MainWindow(QMainWindow):
         current_roi = self.viewer.get_current_roi()
         if current_roi is not None:
             self.experiment.roi = current_roi.to_dict()
+        # Save current display settings before auto-saving
+        if "display" not in self.experiment.settings:
+            self.experiment.settings["display"] = {}
+        self.experiment.settings["display"]["exposure"] = self.viewer.get_exposure()
+        self.experiment.settings["display"]["contrast"] = self.viewer.get_contrast()
         try:
             self.manager.save_experiment(self.experiment, self.current_experiment_path)
         except Exception:
