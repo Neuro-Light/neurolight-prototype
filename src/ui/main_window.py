@@ -37,6 +37,13 @@ class MainWindow(QMainWindow):
         self.current_experiment_path: Optional[str] = None
         self.image_processor = ImageProcessor(experiment)
 
+        # Initialize debounced save timer for display settings
+        self._display_settings_timer = QTimer()
+        self._display_settings_timer.setSingleShot(True)
+        self._display_settings_timer.timeout.connect(self._persist_display_settings)
+        self._pending_exposure: Optional[int] = None
+        self._pending_contrast: Optional[int] = None
+
         self.setWindowTitle(f"Neurolight - {self.experiment.name}")
         self.resize(1200, 800)
 
@@ -98,6 +105,9 @@ class MainWindow(QMainWindow):
         # Connect ROI selection to analysis and saving
         self.viewer.roiSelected.connect(self._on_roi_selected)
         self.viewer.roiSelected.connect(self._save_roi_to_experiment)
+        
+        # Connect display settings changes to debounced saving
+        self.viewer.displaySettingsChanged.connect(self._on_display_settings_changed)
 
         # Create data analyzer
         self.data_analyzer = DataAnalyzer(self.experiment)
@@ -113,13 +123,20 @@ class MainWindow(QMainWindow):
         self._auto_load_experiment_data()
 
     def _auto_load_experiment_data(self) -> None:
-        """Auto-load image stack and ROI if experiment has saved data."""
+        """Auto-load image stack, ROI, and display settings if experiment has saved data."""
         try:
             path = self.experiment.image_stack_path
             if path:
 
                 def load_stack_and_roi(p=path):
                     self.viewer.set_stack(p)
+                    # Load display settings (exposure, contrast)
+                    display_settings = self.experiment.settings.get("display", {})
+                    exposure = display_settings.get("exposure", 0)
+                    contrast = display_settings.get("contrast", 0)
+                    self.viewer.set_exposure(exposure)
+                    self.viewer.set_contrast(contrast)
+                    
                     if self.experiment.roi:
                         roi_data = self.experiment.roi
                         
@@ -170,10 +187,14 @@ class MainWindow(QMainWindow):
         if not self.current_experiment_path:
             self._save_as()
             return
+        # Flush any pending display settings immediately
+        self._flush_pending_display_settings()
         # Save current ROI to experiment before saving
         current_roi = self.viewer.get_current_roi()
         if current_roi is not None:
             self.experiment.roi = current_roi.to_dict()
+        # Capture current display settings before saving
+        self._capture_display_settings()
         try:
             self.manager.save_experiment(self.experiment, self.current_experiment_path)
             QMessageBox.information(self, "Saved", "Experiment saved successfully.")
@@ -188,6 +209,14 @@ class MainWindow(QMainWindow):
             return
         if not file_path.endswith(".nexp"):
             file_path += ".nexp"
+        # Flush any pending display settings immediately
+        self._flush_pending_display_settings()
+        # Save current ROI to experiment before saving
+        current_roi = self.viewer.get_current_roi()
+        if current_roi is not None:
+            self.experiment.roi = current_roi.to_dict()
+        # Capture current display settings before saving
+        self._capture_display_settings()
         try:
             self.manager.save_experiment(self.experiment, file_path)
             self.current_experiment_path = file_path
@@ -212,18 +241,22 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.No:
             return
 
+        # Flush any pending display settings immediately
+        self._flush_pending_display_settings()
         # Save current ROI to experiment before closing
         current_roi = self.viewer.get_current_roi()
         if current_roi is not None:
             self.experiment.roi = current_roi.to_dict()
-            # Save to file if we have a path
-            if self.current_experiment_path:
-                try:
-                    self.manager.save_experiment(
-                        self.experiment, self.current_experiment_path
-                    )
-                except Exception:
-                    pass
+        # Capture current display settings before closing
+        self._capture_display_settings()
+        # Save to file if we have a path
+        if self.current_experiment_path:
+            try:
+                self.manager.save_experiment(
+                    self.experiment, self.current_experiment_path
+                )
+            except Exception:
+                pass
 
         # Hide the main window
         self.hide()
@@ -248,7 +281,7 @@ class MainWindow(QMainWindow):
             self.stack_handler.associate_with_experiment(self.experiment)
             self.data_analyzer = DataAnalyzer(self.experiment)
 
-            # Auto-load image stack/ROI if experiment has saved data
+            # Auto-load image stack/ROI/display settings if experiment has saved data
             self._auto_load_experiment_data()
 
             # Show the window again
@@ -271,18 +304,22 @@ class MainWindow(QMainWindow):
         )
 
         if reply == QMessageBox.Yes:
+            # Flush any pending display settings immediately
+            self._flush_pending_display_settings()
             # Save current ROI to experiment before exiting
             current_roi = self.viewer.get_current_roi()
             if current_roi is not None:
                 self.experiment.roi = current_roi.to_dict()
-                # Save to file if we have a path
-                if self.current_experiment_path:
-                    try:
-                        self.manager.save_experiment(
-                            self.experiment, self.current_experiment_path
-                        )
-                    except Exception:
-                        pass
+            # Capture current display settings before exiting
+            self._capture_display_settings()
+            # Save to file if we have a path
+            if self.current_experiment_path:
+                try:
+                    self.manager.save_experiment(
+                        self.experiment, self.current_experiment_path
+                    )
+                except Exception:
+                    pass
             QApplication.quit()
 
     def _on_roi_selected(self, roi: ROI) -> None:
@@ -331,6 +368,70 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to analyze ROI:\n{str(e)}")
 
+    def _capture_display_settings(self) -> None:
+        """
+        Capture current display settings (exposure, contrast) from viewer into experiment.
+        
+        This method consolidates the logic for updating display settings in the experiment
+        and should be called before saving, closing, or exiting.
+        """
+        if "display" not in self.experiment.settings:
+            self.experiment.settings["display"] = {}
+        self.experiment.settings["display"]["exposure"] = self.viewer.get_exposure()
+        self.experiment.settings["display"]["contrast"] = self.viewer.get_contrast()
+    
+    def _on_display_settings_changed(self, exposure: int, contrast: int) -> None:
+        """
+        Handle display settings changes with debounced saving.
+        
+        This method is called when the user adjusts exposure or contrast sliders.
+        It stores the pending values and starts/resets a timer for debounced saving.
+        """
+        self._pending_exposure = exposure
+        self._pending_contrast = contrast
+        # Restart the timer (debounce: wait 500ms after last change before saving)
+        self._display_settings_timer.stop()
+        self._display_settings_timer.start(500)
+    
+    def _flush_pending_display_settings(self) -> None:
+        """
+        Immediately flush any pending display settings without waiting for the timer.
+        
+        This is called when manually saving, closing, or exiting to ensure
+        all pending changes are persisted immediately.
+        """
+        # Stop the timer and flush immediately
+        self._display_settings_timer.stop()
+        if self._pending_exposure is not None and self._pending_contrast is not None:
+            self._persist_display_settings()
+    
+    def _persist_display_settings(self) -> None:
+        """
+        Persist pending display settings to experiment and save to file.
+        
+        This method is called by the debounce timer after the user stops adjusting sliders,
+        or immediately when flushing pending settings.
+        """
+        if self._pending_exposure is not None and self._pending_contrast is not None:
+            # Update experiment with pending values
+            if "display" not in self.experiment.settings:
+                self.experiment.settings["display"] = {}
+            self.experiment.settings["display"]["exposure"] = self._pending_exposure
+            self.experiment.settings["display"]["contrast"] = self._pending_contrast
+            
+            # Clear pending values
+            self._pending_exposure = None
+            self._pending_contrast = None
+            
+            # Persist to file if we have a path
+            if self.current_experiment_path:
+                try:
+                    self.manager.save_experiment(
+                        self.experiment, self.current_experiment_path
+                    )
+                except Exception:
+                    pass
+
     def _save_roi_to_experiment(self, roi: ROI) -> None:
         """
         Save ROI to experiment and persist to .nexp file.
@@ -361,10 +462,14 @@ class MainWindow(QMainWindow):
             return
         if not self.current_experiment_path:
             return
+        # Flush any pending display settings immediately
+        self._flush_pending_display_settings()
         # Save current ROI to experiment before auto-saving
         current_roi = self.viewer.get_current_roi()
         if current_roi is not None:
             self.experiment.roi = current_roi.to_dict()
+        # Capture current display settings before auto-saving
+        self._capture_display_settings()
         try:
             self.manager.save_experiment(self.experiment, self.current_experiment_path)
         except Exception:

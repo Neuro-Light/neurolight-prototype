@@ -6,7 +6,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from PySide6.QtCore import Qt, Signal, QRect, QPoint
-from PySide6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QBrush
+from PySide6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QBrush, QIcon
 from PySide6.QtWidgets import (
     QLabel,
     QSlider,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QPushButton,
     QHBoxLayout,
+    QStyle,
 )
 
 from utils.file_handler import ImageStackHandler
@@ -44,6 +45,7 @@ class ImageViewer(QWidget):
     stackLoaded = Signal(str)
     roiSelected = Signal(object)  # Emits ROI object
     roiChanged = Signal(object)  # Emits ROI object when adjusted
+    displaySettingsChanged = Signal(int, int)  # Emits (exposure, contrast) when display settings change
 
     def __init__(self, handler: ImageStackHandler) -> None:
         super().__init__()
@@ -79,20 +81,10 @@ class ImageViewer(QWidget):
         self.image_label.mouseReleaseEvent = self._on_mouse_release
         
         # Upload button (visible when no images loaded)
-        self.upload_btn = QPushButton("Upload Images")
-        self.upload_btn.setFixedSize(200, 60)
-        self.upload_btn.setStyleSheet("""
-            QPushButton {
-                font-size: 16px;
-                font-weight: bold;
-                background-color: #4CAF50;
-                color: white;
-                border-radius: 8px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-        """)
+        self.upload_btn = QPushButton("Open Images")
+        # Add standard Qt file open icon
+        icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon)
+        self.upload_btn.setIcon(icon)
         self.upload_btn.clicked.connect(self._open_upload_dialog)
         
         # Container for image label with upload button overlay
@@ -344,6 +336,8 @@ class ImageViewer(QWidget):
     def _on_adjustment_changed(self, _value: int) -> None:
         self._update_adjustment_labels()
         self._show_current()
+        # Emit signal so MainWindow can save to experiment
+        self.displaySettingsChanged.emit(self.exposure_slider.value(), self.contrast_slider.value())
 
 
     # Function to convert to 8 bits
@@ -761,6 +755,30 @@ class ImageViewer(QWidget):
     def get_current_roi(self) -> Optional[ROI]:
         """Get the current ROI object."""
         return self.current_roi
+
+    def get_exposure(self) -> int:
+        """Get the current exposure value (-100 to 100)."""
+        return self.exposure_slider.value()
+
+    def get_contrast(self) -> int:
+        """Get the current contrast value (-100 to 100)."""
+        return self.contrast_slider.value()
+
+    def set_exposure(self, value: int) -> None:
+        """Set the exposure value (-100 to 100)."""
+        # Block signals to avoid triggering save during load
+        self.exposure_slider.blockSignals(True)
+        self.exposure_slider.setValue(value)
+        self.exposure_slider.blockSignals(False)
+        self._update_adjustment_labels()
+
+    def set_contrast(self, value: int) -> None:
+        """Set the contrast value (-100 to 100)."""
+        # Block signals to avoid triggering save during load
+        self.contrast_slider.blockSignals(True)
+        self.contrast_slider.setValue(value)
+        self.contrast_slider.blockSignals(False)
+        self._update_adjustment_labels()
 
     def set_roi(self, roi: ROI) -> None:
         """

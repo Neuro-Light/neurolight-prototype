@@ -25,7 +25,7 @@ class Experiment:
     processing_history: List[Dict[str, Any]] = field(default_factory=list)
     analysis_results: Dict[str, Any] = field(default_factory=dict)
     settings: Dict[str, Any] = field(default_factory=lambda: {
-        "display": {"colormap": "gray", "brightness": 1.0},
+        "display": {"colormap": "gray", "brightness": 1.0, "exposure": 0, "contrast": 0},
         "processing": {"auto_save": True},
     })
     # Store ROI coordinates in image pixel space (not widget/display space)
