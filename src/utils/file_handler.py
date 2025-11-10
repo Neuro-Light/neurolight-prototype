@@ -78,3 +78,5 @@ class ImageStackHandler:
         experiment.image_count = len(self.files)
         if self.files:
             experiment.image_stack_path = str(Path(self.files[0]).parent)
+            # Save the actual list of selected files
+            experiment.image_stack_files = self.files.copy()

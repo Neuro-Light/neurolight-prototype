@@ -15,6 +15,7 @@ dependencies = [
     "imageio>=2.31.0",
     "pystackreg>=0.2.8",
     "tifffile>=2023.1.0",
+    "scikit-image>=0.21.0",
 ]
 
 [project.optional-dependencies]
