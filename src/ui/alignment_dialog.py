@@ -27,8 +27,8 @@ class AlignmentDialog(QDialog):
         
         self.num_frames = num_frames
         self.reference_index = 0
-        self.method = "ecc"
-        self.warp_mode = "euclidean"
+        self.transform_type = "rigid_body"
+        self.reference_strategy = "first"
         
         layout = QVBoxLayout(self)
         
@@ -48,40 +48,45 @@ class AlignmentDialog(QDialog):
         ref_group.setLayout(ref_layout)
         layout.addWidget(ref_group)
         
-        # Alignment method selection
-        method_group = QGroupBox("Alignment Method")
-        method_layout = QFormLayout()
+        # Transformation type selection
+        transform_group = QGroupBox("Transformation Type")
+        transform_layout = QFormLayout()
         
-        self.method_combo = QComboBox()
-        self.method_combo.addItems(["ECC (Enhanced Correlation Coefficient)", "ORB (Feature-based)"])
-        self.method_combo.setCurrentIndex(0)
-        self.method_combo.currentIndexChanged.connect(self._on_method_changed)
-        
-        method_layout.addRow("Method:", self.method_combo)
-        method_group.setLayout(method_layout)
-        layout.addWidget(method_group)
-        
-        # Warp mode selection (only for ECC)
-        self.warp_group = QGroupBox("Transformation Type")
-        warp_layout = QFormLayout()
-        
-        self.warp_combo = QComboBox()
-        self.warp_combo.addItems([
+        self.transform_combo = QComboBox()
+        self.transform_combo.addItems([
+            "Rigid Body (Translation + Rotation)",
             "Translation",
-            "Euclidean (Translation + Rotation)",
-            "Affine (Translation + Rotation + Scaling)",
-            "Homography (Full Perspective)"
+            "Scaled Rotation",
+            "Affine",
+            "Bilinear"
         ])
-        self.warp_combo.setCurrentIndex(1)  # Default to Euclidean
-        self.warp_combo.currentIndexChanged.connect(self._on_warp_mode_changed)
+        self.transform_combo.setCurrentIndex(0)  # Default to Rigid Body
+        self.transform_combo.currentIndexChanged.connect(self._on_transform_changed)
         
-        warp_layout.addRow("Transformation:", self.warp_combo)
-        self.warp_group.setLayout(warp_layout)
-        layout.addWidget(self.warp_group)
+        transform_layout.addRow("Transformation:", self.transform_combo)
+        transform_group.setLayout(transform_layout)
+        layout.addWidget(transform_group)
+        
+        # Reference strategy selection
+        reference_group = QGroupBox("Reference Strategy")
+        reference_layout = QFormLayout()
+        
+        self.reference_combo = QComboBox()
+        self.reference_combo.addItems([
+            "First Frame",
+            "Previous Frame",
+            "Mean of All Frames"
+        ])
+        self.reference_combo.setCurrentIndex(0)  # Default to First Frame
+        self.reference_combo.currentIndexChanged.connect(self._on_reference_strategy_changed)
+        
+        reference_layout.addRow("Reference:", self.reference_combo)
+        reference_group.setLayout(reference_layout)
+        layout.addWidget(reference_group)
         
         # Info label
         info_label = QLabel(
-            "This will align all images in the stack to the reference frame.\n"
+            "This will align all images in the stack using PyStackReg (ImageJ StackReg).\n"
             "The original images will be preserved, and aligned copies will be created."
         )
         info_label.setWordWrap(True)
@@ -94,30 +99,24 @@ class AlignmentDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
-        
-        self._update_warp_mode_visibility()
     
     def _on_reference_changed(self, value: int):
         self.reference_index = value
     
-    def _on_method_changed(self, index: int):
-        self.method = "ecc" if index == 0 else "orb"
-        self._update_warp_mode_visibility()
+    def _on_transform_changed(self, index: int):
+        transform_types = ["rigid_body", "translation", "scaled_rotation", "affine", "bilinear"]
+        self.transform_type = transform_types[index]
     
-    def _on_warp_mode_changed(self, index: int):
-        warp_modes = ["translation", "euclidean", "affine", "homography"]
-        self.warp_mode = warp_modes[index]
-    
-    def _update_warp_mode_visibility(self):
-        # Warp mode only applies to ECC method
-        self.warp_group.setEnabled(self.method == "ecc")
+    def _on_reference_strategy_changed(self, index: int):
+        reference_strategies = ["first", "previous", "mean"]
+        self.reference_strategy = reference_strategies[index]
     
     def get_parameters(self) -> dict:
         """Get alignment parameters."""
         return {
             "reference_index": self.reference_index,
-            "method": self.method,
-            "warp_mode": self.warp_mode
+            "transform_type": self.transform_type,
+            "reference": self.reference_strategy
         }
     
     def accept(self) -> None:

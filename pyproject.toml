@@ -13,6 +13,8 @@ dependencies = [
     "matplotlib>=3.8.0",
     "statsmodels>=0.14.0",
     "imageio>=2.31.0",
+    "pystackreg>=0.2.8",
+    "tifffile>=2023.1.0",
 ]
 
 [project.optional-dependencies]
