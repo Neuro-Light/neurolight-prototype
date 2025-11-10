@@ -21,6 +21,8 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QVBoxLayout,
     QWidget,
+    QMessageBox,
+    QMenu,
 )
 
 from core.experiment_manager import ExperimentManager, Experiment
@@ -122,7 +124,23 @@ class StartupDialog(QDialog):
 
         self.recent_list = QListWidget()
         self.recent_list.itemDoubleClicked.connect(self._open_recent)
+        self.recent_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.recent_list.customContextMenuRequested.connect(self._show_context_menu)
         self._refresh_recent()
+
+        # Buttons for selected experiment actions
+        buttons_layout = QHBoxLayout()
+        self.delete_btn = QPushButton("Delete Selected")
+        self.delete_btn.clicked.connect(self._delete_selected)
+        self.delete_btn.setEnabled(False)
+        self.export_btn = QPushButton("Export Selected")
+        self.export_btn.clicked.connect(self._export_selected)
+        self.export_btn.setEnabled(False)
+        buttons_layout.addWidget(self.delete_btn)
+        buttons_layout.addWidget(self.export_btn)
+        
+        # Connect selection changed to enable/disable buttons
+        self.recent_list.itemSelectionChanged.connect(self._on_selection_changed)
 
         layout = QVBoxLayout()
         layout.addWidget(title)
@@ -130,6 +148,7 @@ class StartupDialog(QDialog):
         layout.addWidget(load_btn)
         layout.addWidget(QLabel("Recent Experiments"))
         layout.addWidget(self.recent_list)
+        layout.addLayout(buttons_layout)
         self.setLayout(layout)
 
     def _refresh_recent(self) -> None:
@@ -139,6 +158,8 @@ class StartupDialog(QDialog):
             list_item = QListWidgetItem(label)
             list_item.setData(Qt.UserRole, item.get("path"))
             self.recent_list.addItem(list_item)
+        # Clear selection after refresh to disable buttons
+        self.recent_list.clearSelection()
 
     def _start_new(self) -> None:
         dlg = NewExperimentDialog(self)
@@ -146,6 +167,8 @@ class StartupDialog(QDialog):
             exp = self.manager.create_new_experiment(dlg.metadata)
             try:
                 self.manager.save_experiment(exp, dlg.output_path)
+                # Refresh recent list to show the new experiment
+                self._refresh_recent()
             except Exception:
                 return
             self.experiment = exp
@@ -159,9 +182,16 @@ class StartupDialog(QDialog):
         try:
             self.experiment = self.manager.load_experiment(file_path)
             self.experiment_path = file_path
+            # Refresh recent list to update the order
+            self._refresh_recent()
             self.accept()
-        except Exception:
-            pass
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Load Failed",
+                f"Failed to load experiment:\n{file_path}\n\n{str(e)}"
+            )
+            self._refresh_recent()
 
     def _open_recent(self, item: QListWidgetItem) -> None:
         path = item.data(Qt.UserRole)
@@ -172,4 +202,159 @@ class StartupDialog(QDialog):
             self.experiment_path = path
             self.accept()
         except Exception:
-            pass
+            QMessageBox.warning(
+                self,
+                "Load Failed",
+                f"Failed to load experiment:\n{path}\n\nThe file may have been deleted or is corrupted."
+            )
+            self._refresh_recent()
+
+    def _on_selection_changed(self) -> None:
+        """Enable/disable delete and export buttons based on selection."""
+        has_selection = len(self.recent_list.selectedItems()) > 0
+        self.delete_btn.setEnabled(has_selection)
+        self.export_btn.setEnabled(has_selection)
+
+    def _show_context_menu(self, position) -> None:
+        """Show context menu for right-click on experiment list."""
+        item = self.recent_list.itemAt(position)
+        if item is None:
+            return
+        
+        menu = QMenu(self)
+        open_action = menu.addAction("Open")
+        delete_action = menu.addAction("Delete from List")
+        delete_file_action = menu.addAction("Delete File and Remove from List")
+        export_action = menu.addAction("Export")
+        
+        action = menu.exec(self.recent_list.mapToGlobal(position))
+        
+        if action == open_action:
+            self._open_recent(item)
+        elif action == delete_action:
+            self._delete_experiment(item, delete_file=False)
+        elif action == delete_file_action:
+            self._delete_experiment(item, delete_file=True)
+        elif action == export_action:
+            self._export_experiment(item)
+
+    def _delete_selected(self) -> None:
+        """Delete the selected experiment from the list."""
+        selected_items = self.recent_list.selectedItems()
+        if not selected_items:
+            return
+        
+        item = selected_items[0]
+        reply = QMessageBox.question(
+            self,
+            "Delete Experiment",
+            f"Remove '{item.text()}' from recent experiments list?\n\n"
+            "This will not delete the experiment file from disk.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            self._delete_experiment(item, delete_file=False)
+
+    def _delete_experiment(self, item: QListWidgetItem, delete_file: bool = False) -> None:
+        """Delete an experiment from the list and optionally from disk."""
+        path = item.data(Qt.UserRole)
+        if not path:
+            return
+        
+        if delete_file:
+            reply = QMessageBox.warning(
+                self,
+                "Delete Experiment File",
+                f"Are you sure you want to permanently delete:\n{path}\n\n"
+                "This action cannot be undone!",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
+        
+        try:
+            if self.manager.delete_experiment(path, delete_file=delete_file):
+                self._refresh_recent()
+                if delete_file:
+                    QMessageBox.information(
+                        self,
+                        "Deleted",
+                        "Experiment file and entry have been deleted."
+                    )
+                else:
+                    QMessageBox.information(
+                        self,
+                        "Removed",
+                        "Experiment has been removed from the recent list."
+                    )
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Delete Failed",
+                    "Failed to delete experiment."
+                )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"An error occurred while deleting:\n{str(e)}"
+            )
+
+    def _export_selected(self) -> None:
+        """Export the selected experiment."""
+        selected_items = self.recent_list.selectedItems()
+        if not selected_items:
+            return
+        
+        item = selected_items[0]
+        self._export_experiment(item)
+
+    def _export_experiment(self, item: QListWidgetItem) -> None:
+        """Export an experiment to a .nexp file."""
+        path = item.data(Qt.UserRole)
+        if not path:
+            return
+        
+        try:
+            # Load the experiment
+            experiment = self.manager.load_experiment(path)
+            
+            # Get export location
+            default_name = f"{experiment.name}_export.nexp"
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export Experiment",
+                default_name,
+                "Neurolight Experiment (*.nexp);;All Files (*)"
+            )
+            
+            if not file_path:
+                return
+            
+            # Ensure .nexp extension
+            if not file_path.endswith(".nexp"):
+                file_path += ".nexp"
+            
+            # Export experiment data using the manager's save method
+            # This ensures the file format matches the native .nexp format
+            if self.manager.save_experiment(experiment, file_path):
+                QMessageBox.information(
+                    self,
+                    "Export Successful",
+                    f"Experiment exported to:\n{file_path}"
+                )
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Export Failed",
+                    "Failed to export experiment."
+                )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Export Failed",
+                f"Failed to export experiment:\n{str(e)}"
+            )

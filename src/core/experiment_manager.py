@@ -150,9 +150,26 @@ class ExperimentManager:
             with open(RECENT_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f) or {"recent": []}
             items = data.get("recent", [])
+            
+            # Filter out experiments that no longer exist on disk
+            valid_items = []
+            invalid_paths = []
+            for item in items:
+                path = item.get("path", "")
+                if path and os.path.isfile(path) and self.validate_experiment_file(path):
+                    valid_items.append(item)
+                else:
+                    invalid_paths.append(path)
+            
+            # Remove invalid entries from recent file if any were found
+            if invalid_paths:
+                data["recent"] = valid_items
+                with open(RECENT_FILE, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2)
+            
             # Return most recent first, limit 5
-            items.sort(key=lambda x: x.get("last_opened", ""), reverse=True)
-            return items[:5]
+            valid_items.sort(key=lambda x: x.get("last_opened", ""), reverse=True)
+            return valid_items[:5]
         except Exception:
             return []
 
@@ -174,4 +191,43 @@ class ExperimentManager:
         data["recent"] = data["recent"][:20]
         with open(RECENT_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+
+    def remove_from_recent(self, file_path: str) -> None:
+        """Remove an experiment from the recent experiments list."""
+        file_path = str(Path(file_path).resolve())
+        try:
+            with open(RECENT_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f) or {"recent": []}
+        except Exception:
+            data = {"recent": []}
+        # Remove the entry
+        data["recent"] = [e for e in data.get("recent", []) if e.get("path") != file_path]
+        with open(RECENT_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+
+    def delete_experiment(self, file_path: str, delete_file: bool = False) -> bool:
+        """
+        Delete an experiment from recent list and optionally delete the file.
+        
+        Args:
+            file_path: Path to the experiment file
+            delete_file: If True, also delete the experiment file from disk
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            file_path = str(Path(file_path).resolve())
+            
+            # Remove from recent list
+            self.remove_from_recent(file_path)
+            
+            # Optionally delete the file
+            if delete_file and os.path.isfile(file_path):
+                os.remove(file_path)
+                return True
+            
+            return True
+        except Exception:
+            return False
 

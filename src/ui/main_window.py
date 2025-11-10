@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from typing import Optional
+import logging
+import sys
 from pathlib import Path
+from typing import Optional, Dict, Any
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
@@ -15,7 +17,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QDialog,
 )
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QCloseEvent
 
 import numpy as np
 
@@ -29,6 +31,31 @@ from ui.analysis_panel import AnalysisPanel
 from ui.startup_dialog import StartupDialog
 from ui.alignment_dialog import AlignmentDialog
 from ui.alignment_progress_dialog import AlignmentProgressDialog
+
+# Set up logger for main window
+logger = logging.getLogger(__name__)
+
+# Configure logging to file if not already configured
+_log_file = Path.home() / ".neurolight" / "neurolight.log"
+_log_file.parent.mkdir(parents=True, exist_ok=True)
+
+# Check if logging is already configured at the module level
+if not logger.handlers:
+    # Create file handler with append mode
+    file_handler = logging.FileHandler(_log_file, encoding="utf-8", mode='a')
+    file_handler.setLevel(logging.ERROR)
+    
+    # Create formatter - logger.exception() automatically includes traceback
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    file_handler.setFormatter(formatter)
+    
+    # Add handler to logger
+    logger.addHandler(file_handler)
+    logger.setLevel(logging.ERROR)
+    logger.propagate = False  # Prevent duplicate logs
 
 
 class MainWindow(QMainWindow):
@@ -70,6 +97,7 @@ class MainWindow(QMainWindow):
         close_action.triggered.connect(self._close_experiment)
         exit_action.triggered.connect(self._exit_experiment)
         open_stack_action.triggered.connect(self._open_image_stack)
+        export_results_action.triggered.connect(self._export_experiment)
 
         file_menu.addAction(save_action)
         file_menu.addAction(save_as_action)
@@ -96,6 +124,71 @@ class MainWindow(QMainWindow):
         tools_menu.addAction("Generate GIF")
         tools_menu.addAction("Run Analysis")
         menubar.addMenu("Help").addAction("About")
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """
+        Handle window close event (when user clicks X button).
+        Shows a confirmation dialog before closing.
+        """
+        reply = QMessageBox.question(
+            self,
+            "Exit Application",
+            "Are you sure you want to exit the application?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+
+        if reply == QMessageBox.Yes:
+            # Flush any pending display settings before exiting
+            self._flush_pending_display_settings()
+            # Save current ROI to experiment before exiting
+            current_roi = self.viewer.get_current_roi()
+            if current_roi is not None:
+                self.experiment.roi = current_roi.to_dict()
+            # Capture current display settings before exiting
+            self._capture_display_settings()
+            # Save to file if we have a path
+            if self.current_experiment_path:
+                try:
+                    self.manager.save_experiment(
+                        self.experiment, self.current_experiment_path
+                    )
+                except Exception as e:
+                    # Log the full exception with traceback
+                    logger.exception(
+                        f"Failed to save experiment during close: {self.current_experiment_path}"
+                    )
+                    # Show non-blocking user feedback
+                    self._show_save_error_feedback(str(e))
+            event.accept()
+        else:
+            event.ignore()
+
+    def _show_save_error_feedback(self, error_message: str) -> None:
+        """
+        Show non-blocking feedback when save fails during close.
+        Uses status bar message to inform user without blocking the close flow.
+        
+        Args:
+            error_message: The error message string (also logged via logger.exception)
+        """
+        log_path = _log_file
+        status_message = (
+            f"Save failed during close. Error logged to: {log_path}"
+        )
+        
+        # Show status bar message (non-blocking, brief display)
+        # This will be visible briefly before the window closes if there's any delay
+        status_bar = self.statusBar()
+        if status_bar:
+            # Show message for 5 seconds to increase visibility
+            status_bar.showMessage(status_message, 5000)
+        
+        # Note: The full exception with traceback is already logged via logger.exception()
+        # in the closeEvent handler. We intentionally don't show a modal dialog here
+        # as it would block the close flow. The error is fully logged to file, and
+        # the status bar message provides immediate feedback. Users can check the
+        # log file at ~/.neurolight/neurolight.log for full error details.
 
     def _init_layout(self) -> None:
         splitter = QSplitter()
@@ -781,3 +874,59 @@ class MainWindow(QMainWindow):
             f"Aligned {len(aligned_stack)} images saved to {output_dir}\n"
             f"Transformation matrices saved to {transform_file.name}"
         )
+
+    def _export_experiment(self) -> None:
+        """Export the current experiment to a .nexp file."""
+        try:
+            # Flush any pending display settings before exporting
+            self._flush_pending_display_settings()
+            
+            # Save current ROI to experiment before exporting
+            current_roi = self.viewer.get_current_roi()
+            if current_roi is not None:
+                self.experiment.roi = current_roi.to_dict()
+            
+            # Capture current display settings before exporting
+            self._capture_display_settings()
+            
+            # Get export location
+            default_name = f"{self.experiment.name}_export.nexp"
+            if self.current_experiment_path:
+                # Suggest a location near the original file
+                original_path = Path(self.current_experiment_path)
+                default_name = str(original_path.parent / f"{self.experiment.name}_export.nexp")
+            
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export Experiment",
+                default_name,
+                "Neurolight Experiment (*.nexp);;All Files (*)"
+            )
+            
+            if not file_path:
+                return
+            
+            # Ensure .nexp extension
+            if not file_path.endswith(".nexp"):
+                file_path += ".nexp"
+            
+            # Export experiment data using the manager's save method
+            # This ensures the file format matches the native .nexp format
+            if self.manager.save_experiment(self.experiment, file_path):
+                QMessageBox.information(
+                    self,
+                    "Export Successful",
+                    f"Experiment exported to:\n{file_path}"
+                )
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Export Failed",
+                    "Failed to export experiment."
+                )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Export Failed",
+                f"Failed to export experiment:\n{str(e)}"
+            )
