@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from typing import Optional, Dict, Any
+import logging
+import sys
 from pathlib import Path
+from typing import Optional, Dict, Any
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
@@ -29,6 +31,31 @@ from ui.analysis_panel import AnalysisPanel
 from ui.startup_dialog import StartupDialog
 from ui.alignment_dialog import AlignmentDialog
 from ui.alignment_progress_dialog import AlignmentProgressDialog
+
+# Set up logger for main window
+logger = logging.getLogger(__name__)
+
+# Configure logging to file if not already configured
+_log_file = Path.home() / ".neurolight" / "neurolight.log"
+_log_file.parent.mkdir(parents=True, exist_ok=True)
+
+# Check if logging is already configured at the module level
+if not logger.handlers:
+    # Create file handler with append mode
+    file_handler = logging.FileHandler(_log_file, encoding="utf-8", mode='a')
+    file_handler.setLevel(logging.ERROR)
+    
+    # Create formatter - logger.exception() automatically includes traceback
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    file_handler.setFormatter(formatter)
+    
+    # Add handler to logger
+    logger.addHandler(file_handler)
+    logger.setLevel(logging.ERROR)
+    logger.propagate = False  # Prevent duplicate logs
 
 
 class MainWindow(QMainWindow):
@@ -126,11 +153,42 @@ class MainWindow(QMainWindow):
                     self.manager.save_experiment(
                         self.experiment, self.current_experiment_path
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    # Log the full exception with traceback
+                    logger.exception(
+                        f"Failed to save experiment during close: {self.current_experiment_path}"
+                    )
+                    # Show non-blocking user feedback
+                    self._show_save_error_feedback(str(e))
             event.accept()
         else:
             event.ignore()
+
+    def _show_save_error_feedback(self, error_message: str) -> None:
+        """
+        Show non-blocking feedback when save fails during close.
+        Uses status bar message to inform user without blocking the close flow.
+        
+        Args:
+            error_message: The error message string (also logged via logger.exception)
+        """
+        log_path = _log_file
+        status_message = (
+            f"Save failed during close. Error logged to: {log_path}"
+        )
+        
+        # Show status bar message (non-blocking, brief display)
+        # This will be visible briefly before the window closes if there's any delay
+        status_bar = self.statusBar()
+        if status_bar:
+            # Show message for 5 seconds to increase visibility
+            status_bar.showMessage(status_message, 5000)
+        
+        # Note: The full exception with traceback is already logged via logger.exception()
+        # in the closeEvent handler. We intentionally don't show a modal dialog here
+        # as it would block the close flow. The error is fully logged to file, and
+        # the status bar message provides immediate feedback. Users can check the
+        # log file at ~/.neurolight/neurolight.log for full error details.
 
     def _init_layout(self) -> None:
         splitter = QSplitter()
