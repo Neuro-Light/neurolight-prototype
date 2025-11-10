@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from typing import Optional, Tuple, Dict, Any
 
 import numpy as np
@@ -438,20 +439,14 @@ class NeuronDetectionWidget(QWidget):
         
         try:
             # Create CSV with y, x coordinates and quality
-            data = []
-            for i, (y, x) in enumerate(self.neuron_locations):
-                quality = "Good" if (self.quality_mask[i] if self.quality_mask is not None else True) else "Bad"
-                data.append([y, x, quality])
-            
-            header = "Y,X,Quality"
-            np.savetxt(
-                file_path,
-                data,
-                delimiter=',',
-                header=header,
-                comments='',
-                fmt='%d,%d,%s'
-            )
+            with open(file_path, 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                # Write header
+                writer.writerow(["Y", "X", "Quality"])
+                # Write data rows
+                for i, (y, x) in enumerate(self.neuron_locations):
+                    quality = "Good" if (self.quality_mask[i] if self.quality_mask is not None else True) else "Bad"
+                    writer.writerow([int(y), int(x), quality])
             
             QMessageBox.information(
                 self,
@@ -517,32 +512,21 @@ class NeuronDetectionWidget(QWidget):
         try:
             # Create CSV with y, x, quality, and all trajectory values
             num_neurons, num_frames = self.neuron_trajectories.shape
-            data = []
             
-            # Header: Y, X, Quality, Frame_0, Frame_1, ..., Frame_N
-            header_parts = ["Y", "X", "Quality"]
-            header_parts.extend([f"Frame_{i}" for i in range(num_frames)])
-            header = ",".join(header_parts)
-            
-            for i, (y, x) in enumerate(self.neuron_locations):
-                quality = "Good" if (self.quality_mask[i] if self.quality_mask is not None else True) else "Bad"
-                row = [y, x, quality]
-                row.extend(self.neuron_trajectories[i])
-                data.append(row)
-            
-            # Format string: integers for y, x, string for quality, floats for trajectories
-            fmt_parts = ["%d", "%d", "%s"]
-            fmt_parts.extend(["%.6f"] * num_frames)
-            fmt = ",".join(fmt_parts)
-            
-            np.savetxt(
-                file_path,
-                data,
-                delimiter=',',
-                header=header,
-                comments='',
-                fmt=fmt
-            )
+            with open(file_path, 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                # Write header: Y, X, Quality, Frame_0, Frame_1, ..., Frame_N
+                header = ["Y", "X", "Quality"]
+                header.extend([f"Frame_{i}" for i in range(num_frames)])
+                writer.writerow(header)
+                
+                # Write data rows
+                for i, (y, x) in enumerate(self.neuron_locations):
+                    quality = "Good" if (self.quality_mask[i] if self.quality_mask is not None else True) else "Bad"
+                    row = [int(y), int(x), quality]
+                    # Add trajectory values as floats
+                    row.extend([float(val) for val in self.neuron_trajectories[i]])
+                    writer.writerow(row)
             
             QMessageBox.information(
                 self,
