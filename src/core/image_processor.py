@@ -324,7 +324,6 @@ class ImageProcessor:
             Tuple of (aligned_stack, transformation_matrices, confidence_scores)
         """
         from pystackreg import StackReg
-        from pystackreg.util import to_uint16
         
         if image_stack.ndim != 3:
             raise ValueError("Image stack must be 3D array (frames, height, width)")
@@ -347,13 +346,6 @@ class ImageProcessor:
         
         # Initialize StackReg
         sr = StackReg(transform_const)
-        
-        # Store original data range for each frame to preserve brightness/contrast
-        original_mins = []
-        original_maxs = []
-        for i in range(num_frames):
-            original_mins.append(float(np.min(image_stack[i])))
-            original_maxs.append(float(np.max(image_stack[i])))
         
         # Normalize all frames to a consistent range (0-65535) for alignment
         # This ensures consistent brightness across frames during alignment
