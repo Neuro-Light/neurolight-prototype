@@ -406,13 +406,25 @@ class ImageProcessor:
         
         # Calculate confidence scores using normalized cross-correlation
         confidence_scores = []
-        # For 'first' reference, use first frame; for 'previous' or 'mean', use first frame as reference
-        reference_frame = aligned_stack[0]
+        mean_reference_frame = None
+        if reference == 'mean':
+            mean_reference_frame = np.mean(aligned_stack.astype(np.float32), axis=0)
         
         for i in range(num_frames):
-            if i == 0 and reference == 'first':
-                confidence_scores.append(1.0)
-                continue
+            if reference == 'first':
+                if i == 0:
+                    confidence_scores.append(1.0)
+                    continue
+                reference_frame = aligned_stack[0]
+            elif reference == 'previous':
+                if i == 0:
+                    confidence_scores.append(1.0)
+                    continue
+                reference_frame = aligned_stack[i - 1]
+            elif reference == 'mean':
+                reference_frame = mean_reference_frame
+            else:
+                reference_frame = aligned_stack[0]
             
             if progress_callback:
                 progress_callback(i, num_frames, f"Calculating confidence for frame {i+1}/{num_frames}...")
