@@ -23,6 +23,7 @@ class ROIIntensityPlotWidget(QWidget):
         super().__init__(parent)
         self.intensity_data: Optional[np.ndarray] = None
         self.frames_data: Optional[np.ndarray] = None
+        self.experiment: Optional["Experiment"] = None
         
         layout = QVBoxLayout(self)
         
@@ -100,11 +101,14 @@ class ROIIntensityPlotWidget(QWidget):
             QMessageBox.warning(self, "No Data", "No intensity data to export.")
             return
         
+        # Check for experiment name properly set
+        experiment_name = self.experiment.name if self.experiment else "Experiment"
+        
         # Get save location
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "Save Intensity Data",
-            "",
+            f"{experiment_name}_roi_intensity_data.csv",
             "CSV Files (*.csv)"
         )
         
