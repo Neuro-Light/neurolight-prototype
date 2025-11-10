@@ -689,15 +689,14 @@ class MainWindow(QMainWindow):
         
         params = dialog.get_parameters()
         
-        # Show progress dialog (we align num_frames - 1 frames, skipping reference)
-        frames_to_align = num_frames - 1
-        progress_dialog = AlignmentProgressDialog(self, frames_to_align)
+        # Show progress dialog
+        progress_dialog = AlignmentProgressDialog(self, num_frames)
         progress_dialog.show()
         QApplication.processEvents()
         
         try:
             # Load all frames
-            progress_dialog.update_progress(0, frames_to_align, "Loading image stack...")
+            progress_dialog.update_progress(0, num_frames, "Loading image stack...")
             QApplication.processEvents()
             
             frame_data = self.stack_handler.get_all_frames_as_array()
@@ -718,15 +717,14 @@ class MainWindow(QMainWindow):
                 return not progress_dialog.is_cancelled()
             
             # Perform alignment
-            progress_dialog.update_progress(0, frames_to_align, "Starting alignment...")
+            progress_dialog.update_progress(0, num_frames, "Starting alignment...")
             QApplication.processEvents()
             
             aligned_stack, transformation_matrices, confidence_scores = (
                 self.image_processor.align_image_stack(
                     frame_data,
-                    reference_index=params["reference_index"],
-                    method=params["method"],
-                    warp_mode=params["warp_mode"],
+                    transform_type=params["transform_type"],
+                    reference=params["reference"],
                     progress_callback=progress_callback
                 )
             )
@@ -742,7 +740,7 @@ class MainWindow(QMainWindow):
                 return
             
             # Check alignment quality
-            avg_confidence = sum(confidence_scores) / len(confidence_scores)
+            avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.0
             low_confidence_frames = [
                 i for i, conf in enumerate(confidence_scores) if conf < 0.5
             ]
@@ -808,22 +806,115 @@ class MainWindow(QMainWindow):
                 f"Failed to align images:\n{str(e)}"
             )
     
+    def _apply_exposure_contrast(self, arr: np.ndarray, exposure: int, contrast: int) -> np.ndarray:
+        """
+        Apply exposure and contrast adjustments to an image array.
+        Uses the same logic as ImageViewer._apply_adjustments.
+        
+        Args:
+            arr: Input image array
+            exposure: Exposure value (-100 to 100)
+            contrast: Contrast value (-100 to 100)
+            
+        Returns:
+            Adjusted image array (normalized to 0-1 range)
+        """
+        # Store original dtype
+        orig_dtype = arr.dtype
+        # Convert to float32
+        new_arr = arr.astype(np.float32, copy=True)
+        min_pixel = float(np.min(new_arr))
+        max_pixel = float(np.max(new_arr))
+        pixel_range = max_pixel - min_pixel
+        
+        # Normalize to 0-1 range
+        if pixel_range != 0:
+            new_arr = (new_arr - min_pixel) / pixel_range
+        else:
+            # If all pixels are equal
+            if np.issubdtype(orig_dtype, np.integer):
+                max_possible = float(np.iinfo(orig_dtype).max)
+                new_arr = new_arr / max_possible
+            else:
+                new_arr = np.clip(new_arr, 0, 1)
+        
+        # Apply exposure and contrast
+        ev = exposure
+        cv = contrast
+        exposure_factor = 2 ** (ev / 50)
+        contrast_factor = 1 + (cv / 100)
+        # 0.5 to preserve greyscale
+        new_arr = ((new_arr - 0.5) * contrast_factor + 0.5) * exposure_factor
+        new_arr = np.clip(new_arr, 0, 1)
+        
+        return new_arr
+
+    def _apply_exposure_contrast_global(
+        self, 
+        arr: np.ndarray, 
+        exposure: int, 
+        contrast: int,
+        global_min: float,
+        global_max: float,
+        global_range: float
+    ) -> np.ndarray:
+        """
+        Apply exposure and contrast adjustments to an image array using global normalization.
+        This ensures consistent adjustments across all frames in a stack.
+        
+        Args:
+            arr: Input image array
+            exposure: Exposure value (-100 to 100)
+            contrast: Contrast value (-100 to 100)
+            global_min: Global minimum value across all frames
+            global_max: Global maximum value across all frames
+            global_range: Global range (global_max - global_min)
+            
+        Returns:
+            Adjusted image array (normalized to 0-1 range)
+        """
+        # Convert to float32
+        new_arr = arr.astype(np.float32, copy=True)
+        
+        # Normalize to 0-1 range using global min/max for consistency
+        if global_range != 0:
+            new_arr = (new_arr - global_min) / global_range
+        else:
+            # If all pixels are equal across entire stack
+            new_arr = np.clip(new_arr, 0, 1)
+        
+        # Apply exposure and contrast
+        ev = exposure
+        cv = contrast
+        exposure_factor = 2 ** (ev / 50)
+        contrast_factor = 1 + (cv / 100)
+        # 0.5 to preserve greyscale
+        new_arr = ((new_arr - 0.5) * contrast_factor + 0.5) * exposure_factor
+        new_arr = np.clip(new_arr, 0, 1)
+        
+        return new_arr
+
     def _save_aligned_stack(
         self,
         aligned_stack: np.ndarray,
-        transformation_matrices: list,
+        transformation_matrices: np.ndarray,
         confidence_scores: list,
         output_dir: str,
         params: dict
     ) -> None:
-        """Save aligned image stack to disk."""
-        from PIL import Image
-        import json
+        """Save aligned image stack to disk (raw aligned images, no exposure/contrast adjustments)."""
+        import tifffile
+        from pystackreg.util import to_uint16
         
         output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
         
-        # Save aligned images
-        for i, aligned_frame in enumerate(aligned_stack):
+        # Convert to uint16 for saving (preserve original data range)
+        aligned_stack_uint16 = to_uint16(aligned_stack)
+        
+        # Save aligned images (raw, without exposure/contrast adjustments)
+        # Users can adjust exposure/contrast in the viewer after loading
+        for i, aligned_frame in enumerate(aligned_stack_uint16):
             # Generate output filename
             if i < len(self.stack_handler.files):
                 original_name = Path(self.stack_handler.files[i]).stem
@@ -831,48 +922,33 @@ class MainWindow(QMainWindow):
             else:
                 output_file = output_path / f"frame_{i:04d}_aligned.tif"
             
-            # Convert frame to appropriate format for saving
-            if aligned_frame.dtype != np.uint8 and aligned_frame.dtype != np.uint16:
-                # Normalize to uint16 for better precision
-                frame_min = np.min(aligned_frame)
-                frame_max = np.max(aligned_frame)
-                
-                if frame_max > frame_min:
-                    # Scale to 0-65535 range
-                    normalized = (aligned_frame - frame_min) / (frame_max - frame_min)
-                    aligned_frame = (normalized * 65535).astype(np.uint16)
-                else:
-                    aligned_frame = np.full_like(aligned_frame, frame_min, dtype=np.uint16)
-            
-            # Save frame
-            img = Image.fromarray(aligned_frame)
-            img.save(str(output_file))
+            # Save using tifffile (preserves 16-bit precision)
+            tifffile.imwrite(str(output_file), aligned_frame)
         
-        # Save transformation matrices and confidence scores as JSON
+        # Save transformation matrices as numpy array
+        matrices_path = output_path / "transformation_matrices.npy"
+        np.save(str(matrices_path), transformation_matrices)
+        
+        # Save alignment metadata as JSON
+        import json
         transform_data = {
+            "transform_type": params.get("transform_type", "rigid_body"),
+            "reference": params.get("reference", "first"),
             "reference_index": params.get("reference_index", 0),
-            "method": params.get("method", "ecc"),
-            "warp_mode": params.get("warp_mode", "euclidean"),
             "num_frames": len(aligned_stack),
-            "transformations": [
-                {
-                    "frame_index": i,
-                    "matrix": matrix.tolist() if matrix is not None else None,
-                    "confidence": float(conf)
-                }
-                for i, (matrix, conf) in enumerate(zip(transformation_matrices, confidence_scores))
-            ]
+            "confidence_scores": [float(conf) for conf in confidence_scores],
+            "average_confidence": float(sum(confidence_scores) / len(confidence_scores)) if confidence_scores else 0.0
         }
         
-        transform_file = output_path / "alignment_transforms.json"
-        with open(transform_file, 'w') as f:
+        metadata_path = output_path / "alignment_metadata.json"
+        with open(metadata_path, 'w') as f:
             json.dump(transform_data, f, indent=2)
         
         QMessageBox.information(
             self,
             "Save Complete",
             f"Aligned {len(aligned_stack)} images saved to {output_dir}\n"
-            f"Transformation matrices saved to {transform_file.name}"
+            f"Transformation matrices and metadata saved."
         )
 
     def _export_experiment(self) -> None:
