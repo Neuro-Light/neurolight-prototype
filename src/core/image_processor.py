@@ -348,13 +348,6 @@ class ImageProcessor:
         # Initialize StackReg
         sr = StackReg(transform_const)
         
-        # Store original data range for each frame to preserve brightness/contrast
-        original_mins = []
-        original_maxs = []
-        for i in range(num_frames):
-            original_mins.append(float(np.min(image_stack[i])))
-            original_maxs.append(float(np.max(image_stack[i])))
-        
         # Normalize all frames to a consistent range (0-65535) for alignment
         # This ensures consistent brightness across frames during alignment
         image_stack_normalized = np.zeros_like(image_stack, dtype=np.float32)

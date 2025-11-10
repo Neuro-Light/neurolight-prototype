@@ -375,6 +375,38 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
+    def _ensure_detection_data_saved(self) -> None:
+        """
+        Ensure neuron detection data is saved to the experiment.
+        
+        Checks if detection data exists in the experiment, and if not,
+        retrieves it from the detection widget and saves it.
+        """
+        detection_data = self.experiment.get_neuron_detection_data()
+        if detection_data is None or len(detection_data) == 0:
+            # Data wasn't set, try to get it from the detection widget
+            detection_widget = self.analysis.get_neuron_detection_widget()
+            if (hasattr(detection_widget, 'neuron_locations') and 
+                detection_widget.neuron_locations is not None and
+                len(detection_widget.neuron_locations) > 0):
+                # Get detection params from widget if available
+                detection_params = None
+                if hasattr(detection_widget, 'cell_size_spin'):
+                    detection_params = {
+                        'cell_size': detection_widget.cell_size_spin.value(),
+                        'num_peaks': detection_widget.num_peaks_spin.value(),
+                        'correlation_threshold': detection_widget.correlation_threshold_spin.value(),
+                        'threshold_rel': detection_widget.threshold_rel_spin.value(),
+                        'apply_detrending': detection_widget.detrending_checkbox.isChecked()
+                    }
+                self.experiment.set_neuron_detection_data(
+                    neuron_locations=detection_widget.neuron_locations,
+                    neuron_trajectories=detection_widget.neuron_trajectories,
+                    quality_mask=detection_widget.quality_mask,
+                    mean_frame=detection_widget.mean_frame,
+                    detection_params=detection_params
+                )
+
     def _save_neuron_detection(self) -> None:
         """Save experiment when neuron detection completes."""
         if self.current_experiment_path:
@@ -386,36 +418,10 @@ class MainWindow(QMainWindow):
                 # Capture current display settings before saving
                 self._capture_display_settings()
                 # Ensure neuron detection data is saved
-                # The data should already be set by the detection widget, but verify it exists
-                detection_data = self.experiment.get_neuron_detection_data()
-                if detection_data is None or len(detection_data) == 0:
-                    # Data wasn't set, try to get it from the detection widget
-                    detection_widget = self.analysis.get_neuron_detection_widget()
-                    if (hasattr(detection_widget, 'neuron_locations') and 
-                        detection_widget.neuron_locations is not None and
-                        len(detection_widget.neuron_locations) > 0):
-                        # Get detection params from widget if available
-                        detection_params = None
-                        if hasattr(detection_widget, 'cell_size_spin'):
-                            detection_params = {
-                                'cell_size': detection_widget.cell_size_spin.value(),
-                                'num_peaks': detection_widget.num_peaks_spin.value(),
-                                'correlation_threshold': detection_widget.correlation_threshold_spin.value(),
-                                'threshold_rel': detection_widget.threshold_rel_spin.value(),
-                                'apply_detrending': detection_widget.detrending_checkbox.isChecked()
-                            }
-                        self.experiment.set_neuron_detection_data(
-                            neuron_locations=detection_widget.neuron_locations,
-                            neuron_trajectories=detection_widget.neuron_trajectories,
-                            quality_mask=detection_widget.quality_mask,
-                            mean_frame=detection_widget.mean_frame,
-                            detection_params=detection_params
-                        )
+                self._ensure_detection_data_saved()
                 self.manager.save_experiment(self.experiment, self.current_experiment_path)
             except Exception as e:
                 # Log error for debugging
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.error(f"Failed to save neuron detection data: {e}", exc_info=True)
                 pass  # Silently fail for auto-save
     
@@ -725,31 +731,7 @@ class MainWindow(QMainWindow):
         if self.current_experiment_path:
             try:
                 # Ensure neuron detection data is preserved when saving ROI
-                # The data should already be in the experiment, but verify it exists
-                detection_data = self.experiment.get_neuron_detection_data()
-                if detection_data is None or len(detection_data) == 0:
-                    # Try to get data from detection widget if available
-                    detection_widget = self.analysis.get_neuron_detection_widget()
-                    if (hasattr(detection_widget, 'neuron_locations') and 
-                        detection_widget.neuron_locations is not None and
-                        len(detection_widget.neuron_locations) > 0):
-                        # Get detection params from widget if available
-                        detection_params = None
-                        if hasattr(detection_widget, 'cell_size_spin'):
-                            detection_params = {
-                                'cell_size': detection_widget.cell_size_spin.value(),
-                                'num_peaks': detection_widget.num_peaks_spin.value(),
-                                'correlation_threshold': detection_widget.correlation_threshold_spin.value(),
-                                'threshold_rel': detection_widget.threshold_rel_spin.value(),
-                                'apply_detrending': detection_widget.detrending_checkbox.isChecked()
-                            }
-                        self.experiment.set_neuron_detection_data(
-                            neuron_locations=detection_widget.neuron_locations,
-                            neuron_trajectories=detection_widget.neuron_trajectories,
-                            quality_mask=detection_widget.quality_mask,
-                            mean_frame=detection_widget.mean_frame,
-                            detection_params=detection_params
-                        )
+                self._ensure_detection_data_saved()
                 # Persist ROI to .nexp file immediately
                 self.manager.save_experiment(
                     self.experiment, self.current_experiment_path
@@ -1054,7 +1036,6 @@ class MainWindow(QMainWindow):
         exposure: int, 
         contrast: int,
         global_min: float,
-        global_max: float,
         global_range: float
     ) -> np.ndarray:
         """
@@ -1066,7 +1047,6 @@ class MainWindow(QMainWindow):
             exposure: Exposure value (-100 to 100)
             contrast: Contrast value (-100 to 100)
             global_min: Global minimum value across all frames
-            global_max: Global maximum value across all frames
             global_range: Global range (global_max - global_min)
             
         Returns:
