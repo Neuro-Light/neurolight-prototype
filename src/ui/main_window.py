@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Dict, Any
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QDialog,
 )
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QCloseEvent
 
 import numpy as np
 
@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
         close_action.triggered.connect(self._close_experiment)
         exit_action.triggered.connect(self._exit_experiment)
         open_stack_action.triggered.connect(self._open_image_stack)
+        export_results_action.triggered.connect(self._export_experiment)
 
         file_menu.addAction(save_action)
         file_menu.addAction(save_as_action)
@@ -96,6 +97,40 @@ class MainWindow(QMainWindow):
         tools_menu.addAction("Generate GIF")
         tools_menu.addAction("Run Analysis")
         menubar.addMenu("Help").addAction("About")
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """
+        Handle window close event (when user clicks X button).
+        Shows a confirmation dialog before closing.
+        """
+        reply = QMessageBox.question(
+            self,
+            "Exit Application",
+            "Are you sure you want to exit the application?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+
+        if reply == QMessageBox.Yes:
+            # Flush any pending display settings before exiting
+            self._flush_pending_display_settings()
+            # Save current ROI to experiment before exiting
+            current_roi = self.viewer.get_current_roi()
+            if current_roi is not None:
+                self.experiment.roi = current_roi.to_dict()
+            # Capture current display settings before exiting
+            self._capture_display_settings()
+            # Save to file if we have a path
+            if self.current_experiment_path:
+                try:
+                    self.manager.save_experiment(
+                        self.experiment, self.current_experiment_path
+                    )
+                except Exception:
+                    pass
+            event.accept()
+        else:
+            event.ignore()
 
     def _init_layout(self) -> None:
         splitter = QSplitter()
@@ -780,3 +815,59 @@ class MainWindow(QMainWindow):
             f"Aligned {len(aligned_stack)} images saved to {output_dir}\n"
             f"Transformation matrices saved to {transform_file.name}"
         )
+
+    def _export_experiment(self) -> None:
+        """Export the current experiment to a .nexp file."""
+        try:
+            # Flush any pending display settings before exporting
+            self._flush_pending_display_settings()
+            
+            # Save current ROI to experiment before exporting
+            current_roi = self.viewer.get_current_roi()
+            if current_roi is not None:
+                self.experiment.roi = current_roi.to_dict()
+            
+            # Capture current display settings before exporting
+            self._capture_display_settings()
+            
+            # Get export location
+            default_name = f"{self.experiment.name}_export.nexp"
+            if self.current_experiment_path:
+                # Suggest a location near the original file
+                original_path = Path(self.current_experiment_path)
+                default_name = str(original_path.parent / f"{self.experiment.name}_export.nexp")
+            
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export Experiment",
+                default_name,
+                "Neurolight Experiment (*.nexp);;All Files (*)"
+            )
+            
+            if not file_path:
+                return
+            
+            # Ensure .nexp extension
+            if not file_path.endswith(".nexp"):
+                file_path += ".nexp"
+            
+            # Export experiment data using the manager's save method
+            # This ensures the file format matches the native .nexp format
+            if self.manager.save_experiment(self.experiment, file_path):
+                QMessageBox.information(
+                    self,
+                    "Export Successful",
+                    f"Experiment exported to:\n{file_path}"
+                )
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Export Failed",
+                    "Failed to export experiment."
+                )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Export Failed",
+                f"Failed to export experiment:\n{str(e)}"
+            )
