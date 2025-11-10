@@ -249,16 +249,51 @@ class ImageProcessor:
         if img.ndim == 2:
             pass  # Already 2D
         elif img.ndim == 3:
-            # Multi-channel image - convert to grayscale
-            if img.shape[2] == 3:
-                # RGB - use luminance formula
-                img = np.dot(img[..., :3], [0.2989, 0.5870, 0.1140]).astype(img.dtype)
-            elif img.shape[2] == 4:
-                # RGBA - use RGB channels with luminance formula
-                img = np.dot(img[..., :3], [0.2989, 0.5870, 0.1140]).astype(img.dtype)
+            # Need to distinguish between:
+            # - Multi-page TIFF: (frames, height, width) - frames on first axis
+            # - Multi-channel image: (height, width, channels) - channels on last axis
+            
+            # Heuristic to detect multi-page TIFF:
+            # - First dimension is small (reasonable number of frames, <= 10000)
+            # - Last two dimensions are large (both > 10, typical image dimensions)
+            # - Last dimension (width) is typically larger than first dimension (frames)
+            # OR first dimension is 1 (single-page TIFF) and last two dimensions look like image H/W
+            is_likely_frames = (
+                img.shape[0] <= 10000 and  # Reasonable number of frames
+                img.shape[1] > 10 and      # Height looks like image dimension
+                img.shape[2] > 10 and      # Width looks like image dimension
+                img.shape[2] > img.shape[0]  # Width typically > number of frames
+            ) or (
+                img.shape[0] == 1 and      # Single-page TIFF
+                img.shape[1] > 4 and       # Height looks like image dimension
+                img.shape[2] > 4           # Width looks like image dimension
+            )
+            # Heuristic to detect multi-channel image:
+            # - Last dimension is small (<= 4 for RGB/RGBA)
+            # - But only if first dimension is NOT 1 (to avoid misclassifying single-page TIFFs)
+            is_likely_channels = img.shape[2] <= 4 and img.shape[0] != 1
+            
+            if is_likely_frames and not is_likely_channels:
+                # Multi-page TIFF: (frames, height, width)
+                if img.shape[0] > 1:
+                    raise ValueError(
+                        f"Multi-page TIFF detected with {img.shape[0]} pages. "
+                        f"Please select a single page or use a different image. "
+                        f"Shape: {img.shape} (frames, height, width)"
+                    )
+                # Single frame: extract it
+                img = img[0]
             else:
-                # Multi-channel - take first channel
-                img = img[:, :, 0]
+                # Multi-channel image: (height, width, channels)
+                if img.shape[2] == 3:
+                    # RGB - use luminance formula
+                    img = np.dot(img[..., :3], [0.2989, 0.5870, 0.1140]).astype(img.dtype)
+                elif img.shape[2] == 4:
+                    # RGBA - use RGB channels with luminance formula
+                    img = np.dot(img[..., :3], [0.2989, 0.5870, 0.1140]).astype(img.dtype)
+                else:
+                    # Multi-channel - take first channel
+                    img = img[:, :, 0]
         elif img.ndim == 1:
             raise ValueError(f"1D array not supported for image: {path}")
         elif img.ndim > 3:
