@@ -233,8 +233,8 @@ class ImageProcessor:
             try:
                 img = tifffile.imread(str(path))
             except Exception as e:
-                raise ValueError(f"Failed to load TIFF file {path}: {e}")
-        else:
+                raise ValueError(f"Failed to load TIFF file {path}: {e}") from e
+        else: 
             # Use PIL/Pillow for other formats
             try:
                 pil_img = Image.open(str(path))
@@ -243,7 +243,7 @@ class ImageProcessor:
                     pil_img = pil_img.convert('L')
                 img = np.array(pil_img)
             except Exception as e:
-                raise ValueError(f"Failed to load image file {path}: {e}")
+                raise ValueError(f"Failed to load image file {path}: {e}") from e
         
         # Ensure 2D array
         if img.ndim == 2:
