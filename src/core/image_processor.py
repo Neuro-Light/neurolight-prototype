@@ -439,3 +439,192 @@ class ImageProcessor:
         
         return aligned_stack, tmats, confidence_scores
 
+    def detect_neurons_in_roi(
+        self,
+        frame_data: np.ndarray,
+        roi_mask: np.ndarray,
+        cell_size: int = 6,
+        num_peaks: int = 400,
+        correlation_threshold: float = 0.4,
+        threshold_rel: float = 0.1,
+        apply_detrending: bool = True
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Detect neurons within a specified ROI using local maxima detection.
+        
+        This implements a complete neuron detection pipeline:
+        1. Extract and preprocess ROI region from frames
+        2. Detect local maxima (neuron centers)
+        3. Extract intensity trajectories for each neuron
+        4. Filter neurons based on correlation quality
+        5. Optionally apply detrending to remove slow drift
+        
+        Parameters:
+        -----------
+        frame_data : np.ndarray
+            3D array (frames, height, width) of image stack
+        roi_mask : np.ndarray
+            2D boolean array (height, width) where True = inside ROI
+        cell_size : int
+            Neuron diameter in pixels (default: 6)
+        num_peaks : int
+            Maximum number of neurons to detect (default: 400)
+        correlation_threshold : float
+            Threshold for filtering neurons by correlation (default: 0.4)
+        threshold_rel : float
+            Relative threshold for peak detection (0.0-1.0, default: 0.1)
+        apply_detrending : bool
+            Whether to apply Savitzky-Golay detrending (default: True)
+            
+        Returns:
+        --------
+        neuron_locations : np.ndarray
+            Array of (y, x) coordinates for detected neurons (in image coordinates)
+        neuron_trajectories : np.ndarray
+            2D array of intensity time-series (neurons x frames)
+        quality_mask : np.ndarray
+            Boolean array indicating good (True) vs bad (False) neurons
+        """
+        from skimage.feature import peak_local_max
+        from scipy.signal import savgol_filter
+        
+        if frame_data.ndim != 3:
+            raise ValueError("frame_data must be a 3D array (frames, height, width)")
+        
+        if roi_mask.ndim != 2:
+            raise ValueError("roi_mask must be a 2D array (height, width)")
+        
+        num_frames, height, width = frame_data.shape
+        
+        if roi_mask.shape != (height, width):
+            raise ValueError(f"roi_mask shape {roi_mask.shape} must match image dimensions ({height}, {width})")
+        
+        # ============================================================
+        # Step 1: Image Preprocessing
+        # ============================================================
+        # Extract ROI region from all frames
+        roi_region_stack = np.zeros((num_frames, height, width), dtype=frame_data.dtype)
+        for t in range(num_frames):
+            roi_region_stack[t] = frame_data[t] * roi_mask.astype(frame_data.dtype)
+        
+        # Rescale pixel values to 0.0-1.0 range
+        frame_min = np.min(roi_region_stack)
+        frame_max = np.max(roi_region_stack)
+        if frame_max > frame_min:
+            roi_region_stack = (roi_region_stack - frame_min) / (frame_max - frame_min)
+        else:
+            # All pixels are the same value
+            roi_region_stack = np.zeros_like(roi_region_stack)
+        
+        # Calculate mean frame across all time points for the ROI region
+        mean_frame = np.mean(roi_region_stack, axis=0)
+        
+        # ============================================================
+        # Step 2: Neuron Detection (Local Maxima)
+        # ============================================================
+        # Use peak_local_max to find local maxima
+        # Note: peak_local_max returns (row, col) = (y, x) coordinates
+        peaks = peak_local_max(
+            mean_frame,
+            min_distance=cell_size,
+            num_peaks=num_peaks,
+            threshold_rel=threshold_rel,
+            exclude_border=cell_size // 2  # Exclude border to avoid edge artifacts
+        )
+        
+        if len(peaks) == 0:
+            # No neurons detected
+            return (
+                np.array([], dtype=np.int32).reshape(0, 2),  # Empty array with shape (0, 2)
+                np.array([]).reshape(0, num_frames),  # Empty trajectories
+                np.array([], dtype=bool)  # Empty quality mask
+            )
+        
+        # Convert peaks to (y, x) format
+        # peak_local_max returns coordinates as (row, col) = (y, x)
+        neuron_locations = peaks  # Shape: (num_neurons, 2) with columns [y, x]
+        
+        # Filter to only include neurons within ROI mask
+        valid_neurons = []
+        for i, (y, x) in enumerate(neuron_locations):
+            if 0 <= y < height and 0 <= x < width and roi_mask[y, x]:
+                valid_neurons.append(i)
+        
+        if len(valid_neurons) == 0:
+            # No valid neurons in ROI
+            return (
+                np.array([], dtype=np.int32).reshape(0, 2),
+                np.array([]).reshape(0, num_frames),
+                np.array([], dtype=bool)
+            )
+        
+        neuron_locations = neuron_locations[valid_neurons]
+        num_neurons = len(neuron_locations)
+        
+        # ============================================================
+        # Step 3: Trajectory Extraction
+        # ============================================================
+        # For each detected neuron, extract mean intensity over time
+        # within a circular region around the center
+        radius = cell_size / 2
+        neuron_trajectories = np.zeros((num_neurons, num_frames), dtype=np.float32)
+        
+        # Create coordinate grids for circular mask
+        y_coords, x_coords = np.ogrid[:height, :width]
+        
+        for neuron_idx, (y_center, x_center) in enumerate(neuron_locations):
+            # Create circular mask around neuron center
+            dist_sq = (y_coords - y_center) ** 2 + (x_coords - x_center) ** 2
+            circle_mask = dist_sq <= (radius ** 2)
+            
+            # Extract mean intensity for each frame within circular region
+            for t in range(num_frames):
+                # Only consider pixels within both circle and ROI
+                valid_pixels = roi_region_stack[t][circle_mask & roi_mask]
+                if len(valid_pixels) > 0:
+                    neuron_trajectories[neuron_idx, t] = np.mean(valid_pixels)
+                else:
+                    neuron_trajectories[neuron_idx, t] = 0.0
+        
+        # ============================================================
+        # Step 4: Quality Filtering (Correlation-based)
+        # ============================================================
+        # Calculate correlation matrix between all neuron trajectories
+        if num_neurons > 1:
+            # Compute pairwise correlations
+            correlation_matrix = np.corrcoef(neuron_trajectories)
+            
+            # For each neuron, compute mean correlation with all other neurons
+            # (excluding self-correlation which is always 1.0)
+            mean_correlations = np.zeros(num_neurons)
+            for i in range(num_neurons):
+                # Get correlations with all other neurons (exclude self)
+                other_correlations = np.delete(correlation_matrix[i], i)
+                mean_correlations[i] = np.mean(other_correlations)
+            
+            # Filter neurons based on correlation threshold
+            quality_mask = mean_correlations > correlation_threshold
+        else:
+            # Single neuron: can't compute correlation, mark as good
+            quality_mask = np.array([True])
+        
+        # ============================================================
+        # Step 5: Detrending (Optional)
+        # ============================================================
+        if apply_detrending and num_frames > 71:  # Need enough frames for Savitzky-Golay
+            window_length = min(71, num_frames if num_frames % 2 == 1 else num_frames - 1)
+            if window_length >= 5:  # Minimum window length for polyorder=3
+                polyorder = min(3, window_length // 2)
+                for neuron_idx in range(num_neurons):
+                    trajectory = neuron_trajectories[neuron_idx]
+                    try:
+                        # Apply Savitzky-Golay filter to remove slow drift
+                        smoothed = savgol_filter(trajectory, window_length, polyorder)
+                        # Subtract smoothed trend from original signal
+                        neuron_trajectories[neuron_idx] = trajectory - smoothed
+                    except ValueError:
+                        # If filtering fails (e.g., too few points), skip detrending
+                        pass
+        
+        return neuron_locations, neuron_trajectories, quality_mask
+

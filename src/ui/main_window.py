@@ -31,6 +31,7 @@ from ui.analysis_panel import AnalysisPanel
 from ui.startup_dialog import StartupDialog
 from ui.alignment_dialog import AlignmentDialog
 from ui.alignment_progress_dialog import AlignmentProgressDialog
+from ui.loading_dialog import LoadingDialog
 
 # Set up logger for main window
 logger = logging.getLogger(__name__)
@@ -202,6 +203,22 @@ class MainWindow(QMainWindow):
         # Right panel: analysis dashboard
         self.analysis = AnalysisPanel()
         self.analysis.get_roi_plot_widget().experiment = self.experiment
+        
+        # Set up neuron detection widget
+        detection_widget = self.analysis.get_neuron_detection_widget()
+        detection_widget.set_image_processor(self.image_processor)
+        detection_widget.experiment = self.experiment
+        
+        # Connect detection widget to trajectory plot widget
+        trajectory_plot_widget = self.analysis.get_neuron_trajectory_plot_widget()
+        detection_widget.set_trajectory_plot_callback(
+            lambda trajectories, quality_mask, locations: trajectory_plot_widget.plot_trajectories(
+                trajectories, quality_mask, locations
+            )
+        )
+        
+        # Connect detection widget to save experiment callback
+        detection_widget.set_save_experiment_callback(self._save_neuron_detection)
 
         # Connect ROI selection to analysis and saving
         self.viewer.roiSelected.connect(self._on_roi_selected)
@@ -228,39 +245,107 @@ class MainWindow(QMainWindow):
         try:
             path = self.experiment.image_stack_path
             if path:
+                # Show loading dialog
+                loading_dialog = LoadingDialog(self)
+                loading_dialog.show()
+                loading_dialog.update_status("Loading image stack...", "This may take a few seconds")
+                
+                # Process events to show the dialog
+                QApplication.processEvents()
 
                 def load_stack_and_roi(p=path):
-                    self.viewer.set_stack(p)
-                    # Load display settings (exposure, contrast)
-                    display_settings = self.experiment.settings.get("display", {})
-                    exposure = display_settings.get("exposure", 0)
-                    contrast = display_settings.get("contrast", 0)
-                    self.viewer.set_exposure(exposure)
-                    self.viewer.set_contrast(contrast)
-                    
-                    if self.experiment.roi:
-                        roi_data = self.experiment.roi
+                    try:
+                        # Check if we have a saved file list (selected files)
+                        saved_files = self.experiment.image_stack_files
+                        if saved_files and len(saved_files) > 0:
+                            # Verify files still exist
+                            existing_files = [f for f in saved_files if Path(f).exists()]
+                            if len(existing_files) > 0:
+                                loading_dialog.update_status("Loading image stack...", f"Loading {len(existing_files)} selected images")
+                                QApplication.processEvents()
+                                self.viewer.set_stack(existing_files)
+                            else:
+                                # Files don't exist, fall back to directory
+                                loading_dialog.update_status("Loading image stack...", f"Selected files not found, loading from directory: {p}")
+                                QApplication.processEvents()
+                                self.viewer.set_stack(p)
+                        else:
+                            # No saved file list, load from directory
+                            loading_dialog.update_status("Loading image stack...", f"Loading images from: {p}")
+                            QApplication.processEvents()
+                            self.viewer.set_stack(p)
                         
-                        # Convert dict to ROI object
-                        try:
-                            roi = ROI.from_dict(roi_data)
-                        except Exception:
-                            # Fallback for malformed data - use same defaults as from_dict()
-                            roi = ROI(
-                                x=roi_data.get("x", 0),
-                                y=roi_data.get("y", 0),
-                                width=roi_data.get("width", 100),
-                                height=roi_data.get("height", 100),
-                                shape=ROIShape.ELLIPSE
-                            )
+                        # Load display settings (exposure, contrast)
+                        display_settings = self.experiment.settings.get("display", {})
+                        exposure = display_settings.get("exposure", 0)
+                        contrast = display_settings.get("contrast", 0)
+                        self.viewer.set_exposure(exposure)
+                        self.viewer.set_contrast(contrast)
+                        
+                        if self.experiment.roi:
+                            loading_dialog.update_status("Loading ROI...", "Restoring ROI selection")
+                            QApplication.processEvents()
+                            
+                            roi_data = self.experiment.roi
+                            
+                            # Convert dict to ROI object
+                            try:
+                                roi = ROI.from_dict(roi_data)
+                            except Exception:
+                                # Fallback for malformed data - use same defaults as from_dict()
+                                roi = ROI(
+                                    x=roi_data.get("x", 0),
+                                    y=roi_data.get("y", 0),
+                                    width=roi_data.get("width", 100),
+                                    height=roi_data.get("height", 100),
+                                    shape=ROIShape.ELLIPSE
+                                )
 
-                        def load_roi_and_plot():
-                            self.viewer.set_roi(roi)
-                            self._on_roi_selected(roi)
+                            def load_roi_and_plot():
+                                try:
+                                    loading_dialog.update_status("Restoring ROI and graphs...", "Loading analysis data")
+                                    QApplication.processEvents()
+                                    
+                                    self.viewer.set_roi(roi)
+                                    self._on_roi_selected(roi)
+                                    
+                                    # Load neuron detection data if available
+                                    detection_data = self.experiment.get_neuron_detection_data()
+                                    if detection_data:
+                                        loading_dialog.update_status("Loading neuron detection data...", "Restoring detected neurons and trajectories")
+                                        QApplication.processEvents()
+                                        self._load_neuron_detection_data()
+                                    
+                                    # Close loading dialog
+                                    loading_dialog.close_dialog()
+                                except Exception as e:
+                                    loading_dialog.close_dialog()
+                                    # Silently fail - data might be corrupted
 
-                        QTimer.singleShot(200, load_roi_and_plot)
+                            QTimer.singleShot(200, load_roi_and_plot)
+                        else:
+                            # No ROI, just close the dialog
+                            loading_dialog.close_dialog()
+                    except Exception as e:
+                        loading_dialog.close_dialog()
+                        # Silently fail - loading might have issues
 
                 QTimer.singleShot(0, load_stack_and_roi)
+            else:
+                # No image stack path, check if there's neuron detection data to load
+                detection_data = self.experiment.get_neuron_detection_data()
+                if detection_data:
+                    # Show loading dialog for neuron detection data only
+                    loading_dialog = LoadingDialog(self)
+                    loading_dialog.show()
+                    loading_dialog.update_status("Loading neuron detection data...", "Restoring detected neurons and trajectories")
+                    QApplication.processEvents()
+                    
+                    try:
+                        self._load_neuron_detection_data()
+                        loading_dialog.close_dialog()
+                    except Exception:
+                        loading_dialog.close_dialog()
         except Exception:
             pass
 
@@ -275,6 +360,12 @@ class MainWindow(QMainWindow):
     def _on_stack_loaded(self, directory_path: str) -> None:
         # ImageStackHandler already updates experiment association for path/count
         self.stack_handler.associate_with_experiment(self.experiment)
+        
+        # Update detection widget with frame data
+        frame_data = self.stack_handler.get_all_frames_as_array()
+        detection_widget = self.analysis.get_neuron_detection_widget()
+        detection_widget.set_frame_data(frame_data)
+        
         # Persist immediately if we know the path to the .nexp
         if self.current_experiment_path:
             try:
@@ -284,6 +375,56 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
+    def _ensure_detection_data_saved(self) -> None:
+        """
+        Ensure neuron detection data is saved to the experiment.
+        
+        Checks if detection data exists in the experiment, and if not,
+        retrieves it from the detection widget and saves it.
+        """
+        detection_data = self.experiment.get_neuron_detection_data()
+        if detection_data is None or len(detection_data) == 0:
+            # Data wasn't set, try to get it from the detection widget
+            detection_widget = self.analysis.get_neuron_detection_widget()
+            if (hasattr(detection_widget, 'neuron_locations') and 
+                detection_widget.neuron_locations is not None and
+                len(detection_widget.neuron_locations) > 0):
+                # Get detection params from widget if available
+                detection_params = None
+                if hasattr(detection_widget, 'cell_size_spin'):
+                    detection_params = {
+                        'cell_size': detection_widget.cell_size_spin.value(),
+                        'num_peaks': detection_widget.num_peaks_spin.value(),
+                        'correlation_threshold': detection_widget.correlation_threshold_spin.value(),
+                        'threshold_rel': detection_widget.threshold_rel_spin.value(),
+                        'apply_detrending': detection_widget.detrending_checkbox.isChecked()
+                    }
+                self.experiment.set_neuron_detection_data(
+                    neuron_locations=detection_widget.neuron_locations,
+                    neuron_trajectories=detection_widget.neuron_trajectories,
+                    quality_mask=detection_widget.quality_mask,
+                    mean_frame=detection_widget.mean_frame,
+                    detection_params=detection_params
+                )
+
+    def _save_neuron_detection(self) -> None:
+        """Save experiment when neuron detection completes."""
+        if self.current_experiment_path:
+            try:
+                # Save current ROI to experiment before saving
+                current_roi = self.viewer.get_current_roi()
+                if current_roi is not None:
+                    self.experiment.roi = current_roi.to_dict()
+                # Capture current display settings before saving
+                self._capture_display_settings()
+                # Ensure neuron detection data is saved
+                self._ensure_detection_data_saved()
+                self.manager.save_experiment(self.experiment, self.current_experiment_path)
+            except Exception as e:
+                # Log error for debugging
+                logger.error(f"Failed to save neuron detection data: {e}", exc_info=True)
+                pass  # Silently fail for auto-save
+    
     def _save(self) -> None:
         if not self.current_experiment_path:
             self._save_as()
@@ -460,6 +601,17 @@ class MainWindow(QMainWindow):
                 intensity_data, (roi.x, roi.y, roi.width, roi.height)
             )
 
+            # Update detection widget with ROI mask
+            detection_widget = self.analysis.get_neuron_detection_widget()
+            if frame_data.ndim == 3:
+                _, height, width = frame_data.shape
+                # Create ROI mask (uint8 with 0 and 255) and convert to boolean
+                roi_mask_uint8 = roi.create_mask(width, height)
+                roi_mask = (roi_mask_uint8 > 0).astype(bool)  # Convert 0/255 to False/True
+                detection_widget.set_roi_mask(roi_mask)
+                # Also update frame data in case it wasn't set before
+                detection_widget.set_frame_data(frame_data)
+
             # Switch to ROI Intensity tab
             for i in range(self.analysis.count()):
                 if self.analysis.tabText(i) == "ROI Intensity":
@@ -468,6 +620,33 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to analyze ROI:\n{str(e)}")
+    
+    def _load_neuron_detection_data(self) -> None:
+        """Load saved neuron detection data from experiment."""
+        detection_data = self.experiment.get_neuron_detection_data()
+        if detection_data is None:
+            return
+        
+        try:
+            detection_widget = self.analysis.get_neuron_detection_widget()
+            
+            # Check if we have all required data (mean_frame is optional - can be recalculated)
+            if ('neuron_locations' in detection_data and
+                'neuron_trajectories' in detection_data and
+                'quality_mask' in detection_data):
+                
+                # Load the data into the detection widget
+                # mean_frame is optional - will be recalculated if not present
+                detection_widget.load_detection_data(
+                    neuron_locations=detection_data['neuron_locations'],
+                    neuron_trajectories=detection_data['neuron_trajectories'],
+                    quality_mask=detection_data['quality_mask'],
+                    mean_frame=detection_data.get('mean_frame'),  # Optional - can be recalculated
+                    detection_params=detection_data.get('detection_params')
+                )
+        except Exception as e:
+            # Silently fail - detection data might be corrupted
+            pass
 
     def _capture_display_settings(self) -> None:
         """
@@ -551,6 +730,8 @@ class MainWindow(QMainWindow):
         self.experiment.roi = roi.to_dict()
         if self.current_experiment_path:
             try:
+                # Ensure neuron detection data is preserved when saving ROI
+                self._ensure_detection_data_saved()
                 # Persist ROI to .nexp file immediately
                 self.manager.save_experiment(
                     self.experiment, self.current_experiment_path
@@ -855,7 +1036,6 @@ class MainWindow(QMainWindow):
         exposure: int, 
         contrast: int,
         global_min: float,
-        global_max: float,
         global_range: float
     ) -> np.ndarray:
         """
@@ -867,7 +1047,6 @@ class MainWindow(QMainWindow):
             exposure: Exposure value (-100 to 100)
             contrast: Contrast value (-100 to 100)
             global_min: Global minimum value across all frames
-            global_max: Global maximum value across all frames
             global_range: Global range (global_max - global_min)
             
         Returns:
