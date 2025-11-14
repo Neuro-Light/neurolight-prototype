@@ -18,6 +18,9 @@ dependencies = [
     "scikit-image>=0.21.0",
 ]
 
+[project.scripts]
+neurolight = "src.main:main"
+
 #  Pyrefly configuration
 [tool.pyrefly]
 project-includes = ["**/*.py", "**/*.pyi"]
