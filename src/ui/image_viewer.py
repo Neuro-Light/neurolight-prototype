@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple
 from pathlib import Path
 import cv2
 import numpy as np
 from PySide6.QtCore import Qt, Signal, QRect, QPoint
-from PySide6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QBrush, QIcon, QMovie
+from PySide6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QBrush, QMovie
 from PySide6.QtWidgets import (
     QLabel,
     QSlider,
@@ -19,10 +19,9 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QDialog,
 )
-# Direct Pillow access for GIF encoding
-from PIL import Image  
 
 from utils.file_handler import ImageStackHandler
+from core.gif_generator import GifGenerator
 from core.roi import ROI, ROIShape, ROIHandle
 
 
@@ -61,7 +60,7 @@ class ImageViewer(QWidget):
         self.index = 0
         self.cache = _LRUCache(20)
         # Store the path of the last generated GIF for previewing
-        self._last_gif_path: Optional[str] = None
+        self._last_gif_path: Optional[Path] = None
 
         # ROI selection state
         self.roi_selection_mode = False
@@ -301,22 +300,6 @@ class ImageViewer(QWidget):
             if c == 4:
                 return QImage(arr.data, w, h, 4 * w, QImage.Format_RGBA8888)
         raise ValueError("Unsupported image shape")
-
-    # Helper function to prepare frames for GIF encoding by normalizing and converting to uint8
-    def _prepare_frame_for_gif(self, frame: np.ndarray) -> np.ndarray:
-        if frame.ndim == 3:
-            frame = frame.mean(axis=2)
-        # Normalize to 0-255 to avoid washed out previews
-        frame = frame.astype(np.float32)
-        min_val = float(frame.min())
-        max_val = float(frame.max())
-        if max_val > min_val:
-            # Normalize the frame to the range [0, 1]
-            frame = (frame - min_val) / (max_val - min_val)
-        else:
-            # If all values are the same, just return a blank image
-            frame = np.zeros_like(frame, dtype=np.float32)
-        return (frame * 255).clip(0, 255).astype(np.uint8)
 
     # Function to update the silder value so the user can see what value they have
     def _update_adjustment_labels(self) -> None:
@@ -567,50 +550,23 @@ class ImageViewer(QWidget):
 
 
     def _create_gif(self) -> None:
-        # Check if there are images to create a GIF from
         image_count = self.handler.get_image_count()
         if image_count == 0:
-            # Inform the user that no images are loaded for GIF creation
             QMessageBox.information(self, "No Images", "Load images before creating a GIF.")
             return
-        # Check if the first image file exists to determine the output directory
+
         if not self.handler.files:
-            # Inform the user that no image files are loaded for GIF creation
             QMessageBox.warning(self, "GIF Error", "No image files loaded.")
             return
-        # Determine the output path for the GIF based on the first image's directory
+
         image_dir = Path(self.handler.files[0]).parent
-        # Set the output path for the GIF in the same directory as the input images
         output_path = image_dir / "animation.gif"
 
-        # Generate the frames for the GIF by normalizing and converting each image to uint8
         try:
-            frames: List[np.ndarray] = [
-                self._prepare_frame_for_gif(self.handler.get_image_at_index(i))
-                for i in range(image_count)
-            ]
-            # Check if frames were generated successfully
-            if not frames:
-                raise ValueError("No frames available.")
-            # Convert each frame to a Pillow Image object in grayscale mode for GIF encoding
-            pil_frames = [Image.fromarray(frame, mode="L") for frame in frames]  
-            # Save the frames as a GIF using Pillow
-            base_frame, *extra_frames = pil_frames 
-            # frame rate 
-            fps = 10  
-            duration_ms = int(1000 / max(1, fps))  
-            # Save the GIF with the specified duration and loop settings
-            base_frame.save(  
-                output_path,  
-                format="GIF",  
-                save_all=True,  
-                append_images=extra_frames,  
-                duration=duration_ms,  
-                loop=0,  
-                disposal=2, 
-            )
-            #error message if the gif could not be created
-        except Exception as exc:
+            image_stack = [self.handler.get_image_at_index(i) for i in range(image_count)]
+            generator = GifGenerator(fps=10)
+            generator.generate_gif(image_stack, str(output_path), fps=10)
+        except (ValueError, OSError) as exc:
             QMessageBox.warning(self, "GIF Error", f"Could not create GIF:\n{exc}")
             return
 
@@ -619,9 +575,7 @@ class ImageViewer(QWidget):
         QMessageBox.information(self, "GIF Created", f"Saved GIF to:\n{output_path}")
 
     def _preview_gif(self) -> None:
-        # Check if the last generated GIF path is valid before attempting to preview
-        if not self._last_gif_path or not Path(self._last_gif_path).exists():
-            #error message if the gif could not be found
+        if not self._last_gif_path or not self._last_gif_path.exists():
             QMessageBox.information(self, "No GIF", "Create a GIF first to preview it.")
             self.preview_gif_btn.setEnabled(False)
             return
@@ -631,7 +585,7 @@ class ImageViewer(QWidget):
         dialog_layout = QVBoxLayout(dialog)
 
         preview_label = QLabel(alignment=Qt.AlignCenter)
-        movie = QMovie(str(self._last_gif_path))  # QMovie expects a plain string path, not Path objects
+        movie = QMovie(str(self._last_gif_path))
         # Check if the movie loaded successfully
         if not movie.isValid():
             QMessageBox.warning(self, "Preview Error", "Could not load the GIF for preview.")
