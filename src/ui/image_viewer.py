@@ -5,8 +5,8 @@ from typing import Optional, Tuple
 from pathlib import Path
 import cv2
 import numpy as np
-from PySide6.QtCore import Qt, Signal, QRect, QPoint
-from PySide6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QBrush, QIcon
+from PySide6.QtCore import Qt, Signal, QPoint
+from PySide6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QBrush
 from PySide6.QtWidgets import (
     QLabel,
     QSlider,
@@ -45,7 +45,9 @@ class ImageViewer(QWidget):
     stackLoaded = Signal(str)
     roiSelected = Signal(object)  # Emits ROI object
     roiChanged = Signal(object)  # Emits ROI object when adjusted
-    displaySettingsChanged = Signal(int, int)  # Emits (exposure, contrast) when display settings change
+    displaySettingsChanged = Signal(
+        int, int
+    )  # Emits (exposure, contrast) when display settings change
 
     def __init__(self, handler: ImageStackHandler) -> None:
         super().__init__()
@@ -60,17 +62,19 @@ class ImageViewer(QWidget):
         self.roi_end_point = None
         self.current_roi: Optional[ROI] = None
         self.selected_shape = ROIShape.ELLIPSE  # Only ellipse shape supported
-        
+
         # ROI adjustment state
         self.active_handle = ROIHandle.NONE
         self.last_mouse_pos = None
         self.can_adjust_roi = False  # Only true when user clicks "Adjust ROI"
 
-        self.filename_label = QLabel("Load image to see data") #label for user to see if no image are selected
+        self.filename_label = QLabel(
+            "Load image to see data"
+        )  # label for user to see if no image are selected
         self.filename_label.setAlignment(Qt.AlignCenter)
         self.filename_label.setWordWrap(True)
         self.filename_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        
+
         # Create image display area with upload button
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignCenter)
@@ -79,26 +83,27 @@ class ImageViewer(QWidget):
         self.image_label.mousePressEvent = self._on_mouse_press
         self.image_label.mouseMoveEvent = self._on_mouse_move
         self.image_label.mouseReleaseEvent = self._on_mouse_release
-        
+
         # Upload button (visible when no images loaded)
         self.upload_btn = QPushButton("Open Images")
         # Add standard Qt file open icon
         icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon)
         self.upload_btn.setIcon(icon)
         self.upload_btn.clicked.connect(self._open_upload_dialog)
-        
+
         # Container for image label with upload button overlay
         self.image_container = QWidget()
         image_layout = QVBoxLayout(self.image_container)
         image_layout.setContentsMargins(0, 0, 0, 0)
         image_layout.addWidget(self.image_label)
-        
+
         # Overlay upload button on image label
         self.upload_btn.setParent(self.image_label)
         self.upload_btn.show()
-        
+
         # Schedule button centering after layout is complete
         from PySide6.QtCore import QTimer
+
         QTimer.singleShot(0, self._center_upload_button)
 
         self.prev_btn = QPushButton("Previous")
@@ -106,7 +111,7 @@ class ImageViewer(QWidget):
         self.roi_btn = QPushButton("Select ROI")
         self.adjust_roi_btn = QPushButton("Adjust ROI")
         self.adjust_roi_btn.setVisible(False)  # Hidden until ROI exists
-        
+
         self.prev_btn.clicked.connect(self.prev_image)
         self.next_btn.clicked.connect(self.next_image)
         self.roi_btn.clicked.connect(self._toggle_roi_mode)
@@ -135,9 +140,8 @@ class ImageViewer(QWidget):
         self.contrast_slider.setRange(-100, 100)
         # Slider will start at 0 on load in
         self.contrast_slider.setValue(0)
-        #handle the changing value for the contrast slider
+        # handle the changing value for the contrast slider
         self.contrast_slider.valueChanged.connect(self._on_adjustment_changed)
-        
 
         nav = QHBoxLayout()
         nav.addWidget(self.prev_btn)
@@ -176,11 +180,11 @@ class ImageViewer(QWidget):
         self.slider.setRange(0, max(0, self.handler.get_image_count() - 1))
         self.index = 0
         self._show_current()
-        
+
         # Hide upload button when images are loaded
         if self.handler.get_image_count() > 0:
             self.upload_btn.hide()
-        
+
         # Determine directory path and emit
         directory: Optional[str] = None
         if isinstance(files, (list, tuple)) and files:
@@ -237,37 +241,27 @@ class ImageViewer(QWidget):
         paths = [u.toLocalFile() for u in urls]
         if not paths:
             return
-        
+
         # If a single directory dropped, use directory
         if len(paths) == 1 and Path(paths[0]).is_dir():
             self.set_stack(paths[0])
         else:
             # Filter to only allow TIF and GIF files
-            allowed_extensions = {'.tif', '.tiff', '.gif'}
-            filtered_paths = [
-                p for p in paths 
-                if Path(p).suffix.lower() in allowed_extensions
-            ]
-            
+            allowed_extensions = {".tif", ".tiff", ".gif"}
+            filtered_paths = [p for p in paths if Path(p).suffix.lower() in allowed_extensions]
+
             if filtered_paths:
                 self.set_stack(filtered_paths)
             else:
                 # Show message if no valid files were dropped
                 from PySide6.QtWidgets import QMessageBox
-                QMessageBox.warning(
-                    self,
-                    "Invalid Files",
-                    "Only TIF and GIF files are supported."
-                )
+
+                QMessageBox.warning(self, "Invalid Files", "Only TIF and GIF files are supported.")
 
     def _numpy_to_qimage(self, arr: np.ndarray) -> QImage:
         if arr.ndim == 2:
             h, w = arr.shape
-            fmt = (
-                QImage.Format_Grayscale8
-                if arr.dtype != np.uint16
-                else QImage.Format_Grayscale16
-            )
+            fmt = QImage.Format_Grayscale8 if arr.dtype != np.uint16 else QImage.Format_Grayscale16
             bytes_per_line = arr.strides[0]
             return QImage(arr.data, w, h, bytes_per_line, fmt)
         if arr.ndim == 3:
@@ -285,17 +279,17 @@ class ImageViewer(QWidget):
         # For contrast
         self.contrast_label.setText(f"Contrast: {self.contrast_slider.value()}")
 
-    '''Next three function convert to 8 bit and do exposure and contrast
+    """Next three function convert to 8 bit and do exposure and contrast
     calculation. The order is a stated: Exposure/Contrast, then 8 bit converstion
-    This will preserve the appearance and will allow for more adjustment'''
-    #function to calculate teh amount of exposure and contrast the imahe
+    This will preserve the appearance and will allow for more adjustment"""
+
+    # function to calculate teh amount of exposure and contrast the imahe
     # should get based on the slider value input
     def _apply_adjustments(self, arr: np.ndarray) -> np.ndarray:
-
         # Set the exposure and contrast sliders value to ev and cv
         ev = self.exposure_slider.value()
         cv = self.contrast_slider.value()
-        #stores the orignal image data type
+        # stores the orignal image data type
         orig_dtype = arr.dtype
         # convert the image to float32 and saves it as a new array
         # copy=false stop the automatic saving of this array from astype(),
@@ -305,7 +299,7 @@ class ImageViewer(QWidget):
         max_pixel = float(np.max(new_arr))
         pixel_range = max_pixel - min_pixel
         # check to see if the pixel arent all equal
-        # cant divied by 0 
+        # cant divied by 0
         if pixel_range != 0:
             # normalize all the images in the array
             new_arr = (new_arr - min_pixel) / pixel_range
@@ -313,18 +307,18 @@ class ImageViewer(QWidget):
             # if the orignal image data type is a integer image
             # This is because float and integer data type normalize differently
             if np.issubdtype(orig_dtype, np.integer):
-                #get the max out of the image arr
+                # get the max out of the image arr
                 max_possible = float(np.iinfo(orig_dtype).max)
-                #normailze the image
+                # normailze the image
                 new_arr = new_arr / max_possible
             else:
-                #the image is normalized
+                # the image is normalized
                 new_arr = np.clip(new_arr, 0, 1)
 
-        #creating exposure and contrast scalers
-        exposure = 2 ** (ev / 50)               
-        contrast = 1 + (cv / 100) 
-        #0.5 to preserve the greyscale... if higher turns black...if lower turns white      
+        # creating exposure and contrast scalers
+        exposure = 2 ** (ev / 50)
+        contrast = 1 + (cv / 100)
+        # 0.5 to preserve the greyscale... if higher turns black...if lower turns white
         new_arr = ((new_arr - 0.5) * contrast + 0.5) * exposure
         # this will set the max and min values to 0 to 1
         # you will get more uniformed ranges in contrast and exposure
@@ -332,13 +326,11 @@ class ImageViewer(QWidget):
         # return the normalized array with edits
         return new_arr
 
-
     def _on_adjustment_changed(self, _value: int) -> None:
         self._update_adjustment_labels()
         self._show_current()
         # Emit signal so MainWindow can save to experiment
         self.displaySettingsChanged.emit(self.exposure_slider.value(), self.contrast_slider.value())
-
 
     # Function to convert to 8 bits
     def _ensure_uint8(self, arr: np.ndarray) -> np.ndarray:
@@ -346,7 +338,7 @@ class ImageViewer(QWidget):
         new_arr = self._apply_adjustments(arr)
         # convert to unit 8... 8 bit
         unit_8 = cv2.convertScaleAbs(new_arr, alpha=255.0, beta=0.0)
-        #return the 8 bit image
+        # return the 8 bit image
         return unit_8
 
     def _show_current(self) -> None:
@@ -359,6 +351,7 @@ class ImageViewer(QWidget):
                 self.upload_btn.show()
                 # Delay centering to ensure layout is complete
                 from PySide6.QtCore import QTimer
+
                 QTimer.singleShot(10, self._center_upload_button)
             else:
                 self._center_upload_button()
@@ -367,7 +360,7 @@ class ImageViewer(QWidget):
         if img is None:
             img = self.handler.get_image_at_index(self.index)
             self.cache.set(self.index, img)
-        #show the 8 bit image on the workbench
+        # show the 8 bit image on the workbench
         preview_img = self._ensure_uint8(img)
         qimg = self._numpy_to_qimage(preview_img)
         pix = QPixmap.fromImage(qimg)
@@ -440,14 +433,14 @@ class ImageViewer(QWidget):
 
                 # Draw ellipse shape
                 painter.drawEllipse(x_scaled, y_scaled, w_scaled, h_scaled)
-                
+
                 # Draw adjustment handles only when in adjustment mode
                 if self.can_adjust_roi:
                     handle_size = 10
                     # Use cyan/yellow color for adjustment handles
                     painter.setPen(QPen(QColor(255, 255, 0), 2))  # Yellow border
                     painter.setBrush(QBrush(QColor(0, 255, 255)))  # Cyan fill
-                    
+
                     # Corner handles
                     corners = [
                         (x_scaled, y_scaled),
@@ -456,13 +449,17 @@ class ImageViewer(QWidget):
                         (x_scaled + w_scaled, y_scaled + h_scaled),
                     ]
                     for cx, cy in corners:
-                        painter.drawRect(cx - handle_size//2, cy - handle_size//2, 
-                                       handle_size, handle_size)
+                        painter.drawRect(
+                            cx - handle_size // 2,
+                            cy - handle_size // 2,
+                            handle_size,
+                            handle_size,
+                        )
             painter.end()
 
         self.image_label.setPixmap(scaled_pix)
         current_path = Path(self.handler.files[self.index])
-        #label for the image that is been viewed
+        # label for the image that is been viewed
         self.filename_label.setText(f"{self.index + 1}/{count}: \n{current_path.name}")
 
     def resizeEvent(self, event) -> None:  # noqa: N802
@@ -475,35 +472,35 @@ class ImageViewer(QWidget):
         # Center upload button when window resizes
         if self.upload_btn.isVisible():
             self._center_upload_button()
-    
+
     def _center_upload_button(self) -> None:
         """Center the upload button in the image label."""
         if not self.upload_btn.isVisible():
             return
-            
+
         # Use parent (image_label) size for centering
         parent_width = self.image_label.width()
         parent_height = self.image_label.height()
         btn_width = self.upload_btn.width()
         btn_height = self.upload_btn.height()
-        
+
         # Calculate center position
         x = max(0, (parent_width - btn_width) // 2)
         y = max(0, (parent_height - btn_height) // 2)
-        
+
         self.upload_btn.move(x, y)
-    
+
     def _open_upload_dialog(self) -> None:
         """Open file dialog to select TIF or GIF images."""
         from PySide6.QtWidgets import QFileDialog
-        
+
         files, _ = QFileDialog.getOpenFileNames(
             self,
             "Select Image Files",
             "",
-            "Image Files (*.tif *.tiff *.gif);;TIF Files (*.tif *.tiff);;GIF Files (*.gif);;All Files (*.*)"
+            "Image Files (*.tif *.tiff *.gif);;TIF Files (*.tif *.tiff);;GIF Files (*.gif);;All Files (*.*)",
         )
-        
+
         if files:
             self.set_stack(files)
 
@@ -530,7 +527,7 @@ class ImageViewer(QWidget):
     def _toggle_roi_mode(self) -> None:
         """Toggle ROI selection mode."""
         from PySide6.QtWidgets import QMessageBox
-        
+
         # If we're not in selection mode and there's an existing ROI, confirm before starting new selection
         if not self.roi_selection_mode and self.current_roi is not None:
             reply = QMessageBox.question(
@@ -538,7 +535,7 @@ class ImageViewer(QWidget):
                 "Create New ROI",
                 "Creating a new ROI will replace the existing one. Continue?",
                 QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
+                QMessageBox.No,
             )
             if reply == QMessageBox.No:
                 return
@@ -546,27 +543,29 @@ class ImageViewer(QWidget):
             self.current_roi = None
             self.can_adjust_roi = False
             self.adjust_roi_btn.setVisible(False)
-        
+
         self.roi_selection_mode = not self.roi_selection_mode
-        self.roi_btn.setText("Cancel ROI" if self.roi_selection_mode else (
-            "New ROI" if self.current_roi is not None else "Select ROI"
-        ))
+        self.roi_btn.setText(
+            "Cancel ROI"
+            if self.roi_selection_mode
+            else ("New ROI" if self.current_roi is not None else "Select ROI")
+        )
         if not self.roi_selection_mode:
             self.roi_start_point = None
             self.roi_end_point = None
         self._show_current()
-    
+
     def _toggle_adjustment_mode(self) -> None:
         """Toggle ROI adjustment mode."""
         self.can_adjust_roi = not self.can_adjust_roi
         self.adjust_roi_btn.setText("Finish Adjusting" if self.can_adjust_roi else "Adjust ROI")
-        
+
         # Disable/enable other controls based on adjustment mode
         self.prev_btn.setEnabled(not self.can_adjust_roi)
         self.next_btn.setEnabled(not self.can_adjust_roi)
         self.slider.setEnabled(not self.can_adjust_roi)
         self.roi_btn.setEnabled(not self.can_adjust_roi)
-        
+
         # Exit adjustment mode properly
         if not self.can_adjust_roi:
             self.roi_adjustment_mode = False
@@ -575,9 +574,9 @@ class ImageViewer(QWidget):
             # Emit final ROI state after adjustment is complete
             if self.current_roi is not None:
                 self.roiSelected.emit(self.current_roi)
-        
+
         self._show_current()
-    
+
     def _update_roi_button_text(self) -> None:
         """Update ROI button text based on current state."""
         if self.roi_selection_mode:
@@ -586,7 +585,7 @@ class ImageViewer(QWidget):
             self.roi_btn.setText("New ROI")
         else:
             self.roi_btn.setText("Select ROI")
-        
+
         # Show/hide adjust button based on ROI existence
         if self.current_roi is not None and not self.roi_selection_mode:
             self.adjust_roi_btn.setVisible(True)
@@ -598,7 +597,7 @@ class ImageViewer(QWidget):
         # Check if there are any images loaded
         if self.handler.get_image_count() == 0:
             return None
-        
+
         img = self.cache.get(self.index)
         if img is None:
             try:
@@ -607,14 +606,14 @@ class ImageViewer(QWidget):
                 return None
         if img is None or img.ndim < 2:
             return None
-            
+
         original_height, original_width = img.shape[0], img.shape[1]
         label_size = self.image_label.size()
         pixmap = self.image_label.pixmap()
-        
+
         if not pixmap:
             return None
-            
+
         scaled_pixmap_size = pixmap.size()
         label_aspect = label_size.width() / label_size.height()
         original_aspect = original_width / original_height
@@ -633,23 +632,23 @@ class ImageViewer(QWidget):
         y = int((mouse_y - offset_y) / scale)
         x = max(0, min(original_width - 1, x))
         y = max(0, min(original_height - 1, y))
-        
+
         return (x, y, scale)
-    
+
     def _on_mouse_press(self, event) -> None:
         """Handle mouse press for ROI selection and adjustment."""
         if event.button() != Qt.LeftButton:
             return
-        
+
         # Don't process mouse events if no images loaded
         if self.handler.get_image_count() == 0:
             return
-            
+
         coords = self._get_image_coords_from_mouse(event)
         if coords is None:
             return
         x, y, scale = coords
-        
+
         # Check if adjusting existing ROI (only if adjustment mode is enabled)
         if self.current_roi is not None and not self.roi_selection_mode and self.can_adjust_roi:
             # Check which handle was clicked
@@ -659,7 +658,7 @@ class ImageViewer(QWidget):
                 self.roi_adjustment_mode = True
                 self.last_mouse_pos = QPoint(x, y)
                 return
-        
+
         # Otherwise, start new ROI selection
         if self.roi_selection_mode:
             self.roi_start_point = QPoint(x, y)
@@ -670,12 +669,12 @@ class ImageViewer(QWidget):
         # Don't process mouse events if no images loaded
         if self.handler.get_image_count() == 0:
             return
-            
+
         coords = self._get_image_coords_from_mouse(event)
         if coords is None:
             return
         x, y, _ = coords
-        
+
         # Handle ROI adjustment (only if adjustment mode is enabled)
         if self.roi_adjustment_mode and self.last_mouse_pos is not None and self.can_adjust_roi:
             img = self.cache.get(self.index)
@@ -683,19 +682,19 @@ class ImageViewer(QWidget):
                 img = self.handler.get_image_at_index(self.index)
             if img is not None and img.ndim >= 2:
                 original_height, original_width = img.shape[0], img.shape[1]
-                
+
                 dx = x - self.last_mouse_pos.x()
                 dy = y - self.last_mouse_pos.y()
-                
+
                 self.current_roi.adjust_with_handle(
                     self.active_handle, dx, dy, original_width, original_height
                 )
-                
+
                 self.last_mouse_pos = QPoint(x, y)
                 self._show_current()
                 # Emit change signal for live updates
                 self.roiChanged.emit(self.current_roi)
-        
+
         # Handle new ROI selection
         elif self.roi_selection_mode and self.roi_start_point is not None:
             self.roi_end_point = QPoint(x, y)
@@ -705,11 +704,11 @@ class ImageViewer(QWidget):
         """Handle mouse release for ROI selection and adjustment."""
         if event.button() != Qt.LeftButton:
             return
-        
+
         # Don't process mouse events if no images loaded
         if self.handler.get_image_count() == 0:
             return
-        
+
         # Handle ROI adjustment completion
         if self.roi_adjustment_mode:
             self.roi_adjustment_mode = False
@@ -719,14 +718,14 @@ class ImageViewer(QWidget):
             if self.current_roi is not None:
                 self.roiSelected.emit(self.current_roi)
             return
-        
+
         # Handle new ROI selection completion
         if self.roi_selection_mode and self.roi_start_point is not None:
             coords = self._get_image_coords_from_mouse(event)
             if coords is None:
                 return
             x, y, _ = coords
-            
+
             self.roi_end_point = QPoint(x, y)
 
             # Create ROI in image coordinates
@@ -739,7 +738,9 @@ class ImageViewer(QWidget):
             height = max(1, y2 - y1 + 1)
 
             # Create ROI object with selected shape
-            self.current_roi = ROI(x=x1, y=y1, width=width, height=height, shape=self.selected_shape)
+            self.current_roi = ROI(
+                x=x1, y=y1, width=width, height=height, shape=self.selected_shape
+            )
 
             # Emit signal with ROI object
             self.roiSelected.emit(self.current_roi)
@@ -783,7 +784,7 @@ class ImageViewer(QWidget):
     def set_roi(self, roi: ROI) -> None:
         """
         Set the ROI from a saved ROI object.
-        
+
         This method is called when loading an experiment with a saved ROI.
         The coordinates are in original image pixel space, not display/widget space.
         """
@@ -793,4 +794,3 @@ class ImageViewer(QWidget):
         self._update_roi_button_text()
         # Redraw to show the ROI with correct scaling
         self._show_current()
-

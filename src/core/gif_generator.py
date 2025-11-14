@@ -22,4 +22,3 @@ class GifGenerator:
         # Placeholder: no-op copy in MVP
         with open(input_path, "rb") as src, open(output_path, "wb") as dst:
             dst.write(src.read())
-

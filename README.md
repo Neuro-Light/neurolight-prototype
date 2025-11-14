@@ -28,7 +28,7 @@ A powerful PySide6 desktop application for processing and analyzing large TIF im
 1. **Install uv** (if not already installed)
 
    **Option A: Using pip (recommended)**
-   
+
    ```bash
    Windows:
    pip install uv
@@ -47,28 +47,30 @@ A powerful PySide6 desktop application for processing and analyzing large TIF im
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-3. **Clone or download the project**
+2. **Clone or download the project**
 
    ```bash
    git clone https://github.com/Neuro-Light/neurolight-prototype
    cd neurolight-prototype
    ```
 
-4. **Install dependencies and create virtual environment**
+3. **Install dependencies and create virtual environment**
 
    ```bash
    uv sync
    ```
 
-   This will automatically create a virtual environment (`.venv`) and install all dependencies into it.
+   This will automatically create a virtual environment (`.venv`) and install all runtime dependencies needed to run the application.
 
-5. **Launch the application**
+4. **Launch the application**
 
    **Recommended: Use `uv run`** (automatically uses the virtual environment):
 
    ```bash
-   uv run python src/main.py
+   uv run neurolight
    ```
+
+   This command works universally across Windows, macOS, and Linux. The `uv run` command automatically uses the virtual environment and runs the application.
 
    **Alternative: Manually activate the virtual environment**
 
@@ -78,15 +80,37 @@ A powerful PySide6 desktop application for processing and analyzing large TIF im
 
    ```bash
    .venv\Scripts\activate
-   python src/main.py
+   neurolight
    ```
 
    **macOS/Linux:**
 
    ```bash
    source .venv/bin/activate
-   python src/main.py
+   neurolight
    ```
+
+### Development Tools (Optional)
+
+For contributors and developers who want to run linting, type checking, or tests:
+
+```bash
+# Install development tools (ruff, mypy)
+uv sync --group dev
+
+# Install test tools (pytest, pytest-cov)
+uv sync --extra test
+
+# Or install everything at once
+uv sync --group dev --extra test
+```
+
+**Note:** These tools are not required to run the application. They're only needed if you plan to:
+- Contribute code (linting and type checking)
+- Run the test suite
+- Develop new features
+
+For detailed information about development tools and how to use them, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ---
 
@@ -96,47 +120,70 @@ A powerful PySide6 desktop application for processing and analyzing large TIF im
 neurolight-prototype/
 │
 ├── 📄 README.md
+├── 📄 CONTRIBUTING.md
 ├── 📄 pyproject.toml
-├── 📄 requirements.txt
+├── 📄 uv.lock
+├── 📄 LICENSE-APACHE
+├── 📄 LICENSE-MIT
 ├── 📄 .gitignore
 │
 ├── 📂 src/
+│   ├── __init__.py
 │   ├── main.py                    # Application entry point
 │   │
 │   ├── 📂 ui/                     # User interface components
+│   │   ├── __init__.py
 │   │   ├── startup_dialog.py     # Experiment selection screen
 │   │   ├── main_window.py        # Main application window
 │   │   ├── image_viewer.py       # Image display & navigation
-│   │   └── analysis_panel.py     # Analysis dashboard
+│   │   ├── analysis_panel.py     # Analysis dashboard
+│   │   ├── alignment_dialog.py   # Image alignment interface
+│   │   ├── alignment_progress_dialog.py  # Alignment progress tracking
+│   │   ├── loading_dialog.py     # Loading indicators
+│   │   ├── neuron_detection_widget.py    # Neuron detection UI
+│   │   ├── neuron_trajectory_plot.py     # Trajectory visualization
+│   │   └── roi_intensity_plot.py  # ROI intensity plotting
 │   │
 │   ├── 📂 core/                   # Core functionality
+│   │   ├── __init__.py
 │   │   ├── experiment_manager.py # Experiment session handling
 │   │   ├── image_processor.py    # OpenCV processing pipeline
 │   │   ├── gif_generator.py      # Animation export
-│   │   └── data_analyzer.py      # Statistical analysis
+│   │   ├── data_analyzer.py      # Statistical analysis
+│   │   └── roi.py                # Region of Interest handling
 │   │
 │   └── 📂 utils/                  # Utilities
+│       ├── __init__.py
 │       └── file_handler.py       # TIF stack I/O
 │
 ├── 📂 experiments/                # Default experiment storage
 ├── 📂 assets/
 │   └── 📂 icons/
-└── 📂 tests/                      # Unit tests (placeholder)
+└── 📂 tests/                      # Unit tests
+    ├── test_experiment_manager.py
+    └── test_main_window_close_exit.py
 ```
 
 ### 🔧 Module Responsibilities
 
-| Module                    | Purpose                                                                                  |
-| ------------------------- | ---------------------------------------------------------------------------------------- |
-| **experiment_manager.py** | Create, load, save `.nexp` experiments; manage recent experiments list                   |
-| **file_handler.py**       | Load/validate TIF stacks; provide random frame access; associate stacks with experiments |
-| **image_processor.py**    | Apply OpenCV operations; maintain processing history for reproducibility                 |
-| **gif_generator.py**      | Generate and optimize animated GIFs from image sequences                                 |
-| **data_analyzer.py**      | Calculate statistics, generate plots; store results in experiment sessions               |
-| **startup_dialog.py**     | Present new/load experiment options; show recent experiments                             |
-| **main_window.py**        | Coordinate menus, panels, and auto-save functionality                                    |
-| **image_viewer.py**       | Display TIFs with navigation controls; implement LRU caching; handle drag-and-drop       |
-| **analysis_panel.py**     | Provide tabbed interface for future analysis tools                                       |
+| Module                           | Purpose                                                                                  |
+| -------------------------------- | ---------------------------------------------------------------------------------------- |
+| **experiment_manager.py**        | Create, load, save `.nexp` experiments; manage recent experiments list                   |
+| **file_handler.py**              | Load/validate TIF stacks; provide random frame access; associate stacks with experiments |
+| **image_processor.py**           | Apply OpenCV operations; maintain processing history for reproducibility                 |
+| **gif_generator.py**             | Generate and optimize animated GIFs from image sequences                                 |
+| **data_analyzer.py**             | Calculate statistics, generate plots; store results in experiment sessions               |
+| **roi.py**                       | Region of Interest (ROI) data structures and operations                                  |
+| **startup_dialog.py**            | Present new/load experiment options; show recent experiments                             |
+| **main_window.py**               | Coordinate menus, panels, and auto-save functionality                                    |
+| **image_viewer.py**              | Display TIFs with navigation controls; implement LRU caching; handle drag-and-drop       |
+| **analysis_panel.py**            | Provide tabbed interface for future analysis tools                                       |
+| **alignment_dialog.py**          | User interface for image alignment operations                                            |
+| **alignment_progress_dialog.py** | Progress tracking and feedback for alignment processes                                   |
+| **loading_dialog.py**            | Loading indicators and progress feedback for long-running operations                     |
+| **neuron_detection_widget.py**   | UI components for neuron detection and tracking                                          |
+| **neuron_trajectory_plot.py**    | Visualization of neuron trajectories over time                                           |
+| **roi_intensity_plot.py**        | Plotting ROI intensity values across image sequences                                     |
 
 ---
 
@@ -197,6 +244,12 @@ To collaborate with colleagues:
 ## 📖 Usage Guide
 
 ### Starting the Application
+
+Run the application with:
+
+```bash
+uv run neurolight
+```
 
 **Launch Screen:**
 
@@ -293,8 +346,21 @@ tests/
 
 ### Running Tests
 
+First, install test dependencies:
+
 ```bash
-uv sync --all-extras  # Install with test dependencies
+uv sync --extra test
+```
+
+Then run the tests:
+
+```bash
+uv run pytest tests/
+```
+
+Or if you've manually activated the virtual environment:
+
+```bash
 pytest tests/
 ```
 

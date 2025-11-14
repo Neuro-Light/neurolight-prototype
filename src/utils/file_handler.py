@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import List, Optional
 
@@ -55,7 +54,7 @@ class ImageStackHandler:
             with Image.open(file_path) as img:
                 # Use np.array(img) directly to preserve dtype (consistent with get_image_at_index)
                 pixels = np.array(img)
-                
+
                 # Handle different image modes
                 if pixels.ndim == 2:  # Grayscale (mode 'L')
                     # Already in correct shape (height, width)
@@ -66,15 +65,15 @@ class ImageStackHandler:
                     pixels = pixels.mean(axis=2)
                 else:
                     # Fallback: try to reshape if needed
-                    if img.mode == 'L':  # Grayscale
+                    if img.mode == "L":  # Grayscale
                         pixels = pixels.reshape(img.size[1], img.size[0])
-                
+
                 frame_list.append(pixels)
         return np.array(frame_list)
 
     def associate_with_experiment(self, experiment: Experiment) -> None:
         self._experiment = experiment
-        #keeps that path and loads the path to images when loading an expirement
+        # keeps that path and loads the path to images when loading an expirement
         experiment.image_count = len(self.files)
         if self.files:
             experiment.image_stack_path = str(Path(self.files[0]).parent)
