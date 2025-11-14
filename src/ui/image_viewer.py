@@ -563,7 +563,8 @@ class ImageViewer(QWidget):
         output_path = image_dir / "animation.gif"
 
         try:
-            image_stack = [self.handler.get_image_at_index(i) for i in range(image_count)]
+            raw_stack = [self.handler.get_image_at_index(i) for i in range(image_count)]
+            image_stack = [self._ensure_uint8(frame) for frame in raw_stack]
             generator = GifGenerator(fps=10)
             generator.generate_gif(image_stack, str(output_path), fps=10)
         except (ValueError, OSError) as exc:
