@@ -44,9 +44,7 @@ class ImageProcessor:
             }
         )
 
-    def crop_to_roi(
-        self, image: np.ndarray, roi: ROI, apply_mask: bool = True
-    ) -> np.ndarray:
+    def crop_to_roi(self, image: np.ndarray, roi: ROI, apply_mask: bool = True) -> np.ndarray:
         """
         Crop image to ROI region.
 
@@ -103,9 +101,7 @@ class ImageProcessor:
 
             # Ellipse equation
             if rx > 0 and ry > 0:
-                ellipse_mask = ((x_coords - cx) / rx) ** 2 + (
-                    (y_coords - cy) / ry
-                ) ** 2 <= 1
+                ellipse_mask = ((x_coords - cx) / rx) ** 2 + ((y_coords - cy) / ry) ** 2 <= 1
                 mask[ellipse_mask] = 255
 
                 # Apply mask
@@ -114,9 +110,7 @@ class ImageProcessor:
                 else:
                     cropped = cv2.bitwise_and(cropped, cropped, mask=mask)
 
-        self.log_processing_step(
-            "crop", {"roi": roi.to_dict(), "apply_mask": apply_mask}
-        )
+        self.log_processing_step("crop", {"roi": roi.to_dict(), "apply_mask": apply_mask})
         return cropped
 
     def crop_stack_to_roi(
@@ -182,9 +176,7 @@ class ImageProcessor:
         """
         # Normalize image to 0-255 range if needed
         if image.dtype != np.uint8:
-            img_normalized = cv2.normalize(
-                image, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U
-            )
+            img_normalized = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
         else:
             img_normalized = image.copy()
 
@@ -196,9 +188,7 @@ class ImageProcessor:
         _, binary = cv2.threshold(blurred, threshold_value, 255, cv2.THRESH_BINARY)
 
         # Find contours
-        contours, _ = cv2.findContours(
-            binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         # Filter by area and get centroids
         neurons = []
@@ -288,28 +278,20 @@ class ImageProcessor:
                 # Multi-channel image: (height, width, channels)
                 if img.shape[2] == 3:
                     # RGB - use luminance formula
-                    img = np.dot(img[..., :3], [0.2989, 0.5870, 0.1140]).astype(
-                        img.dtype
-                    )
+                    img = np.dot(img[..., :3], [0.2989, 0.5870, 0.1140]).astype(img.dtype)
                 elif img.shape[2] == 4:
                     # RGBA - use RGB channels with luminance formula
-                    img = np.dot(img[..., :3], [0.2989, 0.5870, 0.1140]).astype(
-                        img.dtype
-                    )
+                    img = np.dot(img[..., :3], [0.2989, 0.5870, 0.1140]).astype(img.dtype)
                 else:
                     # Multi-channel - take first channel
                     img = img[:, :, 0]
         elif img.ndim == 1:
             raise ValueError(f"1D array not supported for image: {path}")
         elif img.ndim > 3:
-            raise ValueError(
-                f"Unsupported image dimensions: {img.ndim}D (expected 2D or 3D)"
-            )
+            raise ValueError(f"Unsupported image dimensions: {img.ndim}D (expected 2D or 3D)")
 
         if img.ndim != 2:
-            raise ValueError(
-                f"Failed to convert image to 2D array. Final shape: {img.shape}"
-            )
+            raise ValueError(f"Failed to convert image to 2D array. Final shape: {img.shape}")
 
         return img
 
@@ -400,9 +382,7 @@ class ImageProcessor:
                 if image_stack.dtype == np.uint8:
                     aligned_stack[i] = np.clip(aligned_float, 0, 255).astype(np.uint8)
                 elif image_stack.dtype == np.uint16:
-                    aligned_stack[i] = np.clip(aligned_float, 0, 65535).astype(
-                        np.uint16
-                    )
+                    aligned_stack[i] = np.clip(aligned_float, 0, 65535).astype(np.uint16)
                 else:
                     aligned_stack[i] = aligned_float.astype(image_stack.dtype)
         else:
@@ -444,9 +424,7 @@ class ImageProcessor:
 
             # Normalized Cross-Correlation (NCC)
             ref_norm = (ref_float - ref_float.mean()) / (ref_float.std() + 1e-10)
-            aligned_norm = (aligned_float - aligned_float.mean()) / (
-                aligned_float.std() + 1e-10
-            )
+            aligned_norm = (aligned_float - aligned_float.mean()) / (aligned_float.std() + 1e-10)
             ncc = np.mean(ref_norm * aligned_norm)
 
             # Use NCC as confidence (clamp to [0, 1])
@@ -556,9 +534,7 @@ class ImageProcessor:
         if len(peaks) == 0:
             # No neurons detected
             return (
-                np.array([], dtype=np.int32).reshape(
-                    0, 2
-                ),  # Empty array with shape (0, 2)
+                np.array([], dtype=np.int32).reshape(0, 2),  # Empty array with shape (0, 2)
                 np.array([]).reshape(0, num_frames),  # Empty trajectories
                 np.array([], dtype=bool),  # Empty quality mask
             )
@@ -634,12 +610,8 @@ class ImageProcessor:
         # ============================================================
         # Step 5: Detrending (Optional)
         # ============================================================
-        if (
-            apply_detrending and num_frames > 71
-        ):  # Need enough frames for Savitzky-Golay
-            window_length = min(
-                71, num_frames if num_frames % 2 == 1 else num_frames - 1
-            )
+        if apply_detrending and num_frames > 71:  # Need enough frames for Savitzky-Golay
+            window_length = min(71, num_frames if num_frames % 2 == 1 else num_frames - 1)
             if window_length >= 5:  # Minimum window length for polyorder=3
                 polyorder = min(3, window_length // 2)
                 for neuron_idx in range(num_neurons):

@@ -71,13 +71,9 @@ class AlignmentDialog(QDialog):
         reference_layout = QFormLayout()
 
         self.reference_combo = QComboBox()
-        self.reference_combo.addItems(
-            ["First Frame", "Previous Frame", "Mean of All Frames"]
-        )
+        self.reference_combo.addItems(["First Frame", "Previous Frame", "Mean of All Frames"])
         self.reference_combo.setCurrentIndex(0)  # Default to First Frame
-        self.reference_combo.currentIndexChanged.connect(
-            self._on_reference_strategy_changed
-        )
+        self.reference_combo.currentIndexChanged.connect(self._on_reference_strategy_changed)
 
         reference_layout.addRow("Reference:", self.reference_combo)
         reference_group.setLayout(reference_layout)

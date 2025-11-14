@@ -21,10 +21,7 @@ class LoadingDialog(QDialog):
 
         # Make it stay on top and visible
         self.setWindowFlags(
-            Qt.Dialog
-            | Qt.WindowTitleHint
-            | Qt.CustomizeWindowHint
-            | Qt.WindowStaysOnTopHint
+            Qt.Dialog | Qt.WindowTitleHint | Qt.CustomizeWindowHint | Qt.WindowStaysOnTopHint
         )
 
         layout = QVBoxLayout(self)

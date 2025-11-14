@@ -262,9 +262,7 @@ class StartupDialog(QDialog):
         if reply == QMessageBox.Yes:
             self._delete_experiment(item, delete_file=False)
 
-    def _delete_experiment(
-        self, item: QListWidgetItem, delete_file: bool = False
-    ) -> None:
+    def _delete_experiment(self, item: QListWidgetItem, delete_file: bool = False) -> None:
         """Delete an experiment from the list and optionally from disk."""
         path = item.data(Qt.UserRole)
         if not path:
@@ -296,13 +294,9 @@ class StartupDialog(QDialog):
                         "Experiment has been removed from the recent list.",
                     )
             else:
-                QMessageBox.warning(
-                    self, "Delete Failed", "Failed to delete experiment."
-                )
+                QMessageBox.warning(self, "Delete Failed", "Failed to delete experiment.")
         except Exception as e:
-            QMessageBox.critical(
-                self, "Error", f"An error occurred while deleting:\n{str(e)}"
-            )
+            QMessageBox.critical(self, "Error", f"An error occurred while deleting:\n{str(e)}")
 
     def _export_selected(self) -> None:
         """Export the selected experiment."""
@@ -346,10 +340,6 @@ class StartupDialog(QDialog):
                     self, "Export Successful", f"Experiment exported to:\n{file_path}"
                 )
             else:
-                QMessageBox.warning(
-                    self, "Export Failed", "Failed to export experiment."
-                )
+                QMessageBox.warning(self, "Export Failed", "Failed to export experiment.")
         except Exception as e:
-            QMessageBox.critical(
-                self, "Export Failed", f"Failed to export experiment:\n{str(e)}"
-            )
+            QMessageBox.critical(self, "Export Failed", f"Failed to export experiment:\n{str(e)}")

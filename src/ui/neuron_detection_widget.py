@@ -40,9 +40,7 @@ class NeuronDetectionWidget(QWidget):
         layout = QVBoxLayout(self)
 
         # Status label
-        self.status_label = QLabel(
-            "No ROI selected. Select an ROI in the image viewer."
-        )
+        self.status_label = QLabel("No ROI selected. Select an ROI in the image viewer.")
         self.status_label.setAlignment(Qt.AlignCenter)
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
@@ -82,17 +80,13 @@ class NeuronDetectionWidget(QWidget):
         self.threshold_rel_spin.setSingleStep(0.01)
         self.threshold_rel_spin.setValue(0.1)
         self.threshold_rel_spin.setDecimals(2)
-        self.threshold_rel_spin.setToolTip(
-            "Relative threshold for peak detection (0.0-1.0)"
-        )
+        self.threshold_rel_spin.setToolTip("Relative threshold for peak detection (0.0-1.0)")
         params_layout.addRow("Peak Threshold:", self.threshold_rel_spin)
 
         # Detrending checkbox
         self.detrending_checkbox = QCheckBox()
         self.detrending_checkbox.setChecked(True)
-        self.detrending_checkbox.setToolTip(
-            "Apply Savitzky-Golay filter to remove slow drift"
-        )
+        self.detrending_checkbox.setToolTip("Apply Savitzky-Golay filter to remove slow drift")
         params_layout.addRow("Apply Detrending:", self.detrending_checkbox)
 
         params_group.setLayout(params_layout)
@@ -184,9 +178,7 @@ class NeuronDetectionWidget(QWidget):
             frame_min = np.min(roi_region_stack)
             frame_max = np.max(roi_region_stack)
             if frame_max > frame_min:
-                roi_region_stack = (roi_region_stack - frame_min) / (
-                    frame_max - frame_min
-                )
+                roi_region_stack = (roi_region_stack - frame_min) / (frame_max - frame_min)
 
             self.mean_frame = np.mean(roi_region_stack, axis=0)
         else:
@@ -200,9 +192,7 @@ class NeuronDetectionWidget(QWidget):
                 detection_params.get("correlation_threshold", 0.4)
             )
             self.threshold_rel_spin.setValue(detection_params.get("threshold_rel", 0.1))
-            self.detrending_checkbox.setChecked(
-                detection_params.get("apply_detrending", True)
-            )
+            self.detrending_checkbox.setChecked(detection_params.get("apply_detrending", True))
 
         # Update visualization
         self._visualize_results()
@@ -222,8 +212,7 @@ class NeuronDetectionWidget(QWidget):
         self.export_all_btn.setEnabled(num_neurons > 0)
 
         self.status_label.setText(
-            f"Loaded {num_neurons} neurons from saved experiment "
-            f"({num_good} good, {num_bad} bad)"
+            f"Loaded {num_neurons} neurons from saved experiment ({num_good} good, {num_bad} bad)"
         )
 
         # Notify trajectory plot widget
@@ -243,23 +232,15 @@ class NeuronDetectionWidget(QWidget):
 
         if not has_data:
             if self.frame_data is None:
-                self.status_label.setText(
-                    "No image stack loaded. Load an image stack first."
-                )
+                self.status_label.setText("No image stack loaded. Load an image stack first.")
             elif self.roi_mask is None:
-                self.status_label.setText(
-                    "No ROI selected. Select an ROI in the image viewer."
-                )
+                self.status_label.setText("No ROI selected. Select an ROI in the image viewer.")
             else:
                 self.status_label.setText("Ready to detect neurons.")
 
     def _run_detection(self) -> None:
         """Run neuron detection on the current ROI."""
-        if (
-            self.frame_data is None
-            or self.roi_mask is None
-            or self.image_processor is None
-        ):
+        if self.frame_data is None or self.roi_mask is None or self.image_processor is None:
             QMessageBox.warning(
                 self,
                 "Missing Data",
@@ -307,9 +288,7 @@ class NeuronDetectionWidget(QWidget):
             frame_min = np.min(roi_region_stack)
             frame_max = np.max(roi_region_stack)
             if frame_max > frame_min:
-                roi_region_stack = (roi_region_stack - frame_min) / (
-                    frame_max - frame_min
-                )
+                roi_region_stack = (roi_region_stack - frame_min) / (frame_max - frame_min)
 
             self.mean_frame = np.mean(roi_region_stack, axis=0)
 
@@ -376,9 +355,7 @@ class NeuronDetectionWidget(QWidget):
                 )
 
         except Exception as e:
-            QMessageBox.critical(
-                self, "Detection Failed", f"Failed to detect neurons:\n{str(e)}"
-            )
+            QMessageBox.critical(self, "Detection Failed", f"Failed to detect neurons:\n{str(e)}")
             self.status_label.setText(f"Detection failed: {str(e)}")
         finally:
             self.detect_btn.setEnabled(True)
@@ -467,11 +444,7 @@ class NeuronDetectionWidget(QWidget):
                 for i, (y, x) in enumerate(self.neuron_locations):
                     quality = (
                         "Good"
-                        if (
-                            self.quality_mask[i]
-                            if self.quality_mask is not None
-                            else True
-                        )
+                        if (self.quality_mask[i] if self.quality_mask is not None else True)
                         else "Bad"
                     )
                     writer.writerow([int(y), int(x), quality])
@@ -480,9 +453,7 @@ class NeuronDetectionWidget(QWidget):
                 self, "Export Successful", f"Neuron locations exported to:\n{file_path}"
             )
         except Exception as e:
-            QMessageBox.critical(
-                self, "Export Failed", f"Failed to export locations:\n{str(e)}"
-            )
+            QMessageBox.critical(self, "Export Failed", f"Failed to export locations:\n{str(e)}")
 
     def _export_trajectories(self) -> None:
         """Export neuron trajectories to NPY file."""
@@ -509,9 +480,7 @@ class NeuronDetectionWidget(QWidget):
                 f"Neuron trajectories exported to:\n{file_path}",
             )
         except Exception as e:
-            QMessageBox.critical(
-                self, "Export Failed", f"Failed to export trajectories:\n{str(e)}"
-            )
+            QMessageBox.critical(self, "Export Failed", f"Failed to export trajectories:\n{str(e)}")
 
     def _export_all(self) -> None:
         """Export all data (locations + trajectories) to CSV."""
@@ -549,11 +518,7 @@ class NeuronDetectionWidget(QWidget):
                 for i, (y, x) in enumerate(self.neuron_locations):
                     quality = (
                         "Good"
-                        if (
-                            self.quality_mask[i]
-                            if self.quality_mask is not None
-                            else True
-                        )
+                        if (self.quality_mask[i] if self.quality_mask is not None else True)
                         else "Bad"
                     )
                     row = [int(y), int(x), quality]
@@ -565,9 +530,7 @@ class NeuronDetectionWidget(QWidget):
                 self, "Export Successful", f"All neuron data exported to:\n{file_path}"
             )
         except Exception as e:
-            QMessageBox.critical(
-                self, "Export Failed", f"Failed to export data:\n{str(e)}"
-            )
+            QMessageBox.critical(self, "Export Failed", f"Failed to export data:\n{str(e)}")
 
     def clear_results(self) -> None:
         """Clear detection results and reset state."""

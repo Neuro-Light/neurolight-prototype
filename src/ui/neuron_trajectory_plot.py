@@ -33,9 +33,7 @@ class NeuronTrajectoryPlotWidget(QWidget):
         layout = QVBoxLayout(self)
 
         # Status label
-        self.status_label = QLabel(
-            "No neuron trajectories available. Run detection first."
-        )
+        self.status_label = QLabel("No neuron trajectories available. Run detection first.")
         self.status_label.setAlignment(Qt.AlignCenter)
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
@@ -60,9 +58,7 @@ class NeuronTrajectoryPlotWidget(QWidget):
         self.max_neurons_spin = QSpinBox()
         self.max_neurons_spin.setRange(1, 1000)
         self.max_neurons_spin.setValue(50)
-        self.max_neurons_spin.setToolTip(
-            "Maximum number of neurons to display (for performance)"
-        )
+        self.max_neurons_spin.setToolTip("Maximum number of neurons to display (for performance)")
         self.max_neurons_spin.valueChanged.connect(self._update_plot)
         options_layout.addRow("Max Neurons to Display:", self.max_neurons_spin)
 
@@ -214,9 +210,7 @@ class NeuronTrajectoryPlotWidget(QWidget):
                 # Average of good neurons
                 good_indices = np.where(self.quality_mask)[0]
                 if len(good_indices) > 0:
-                    avg_trajectory = np.mean(
-                        self.neuron_trajectories[good_indices], axis=0
-                    )
+                    avg_trajectory = np.mean(self.neuron_trajectories[good_indices], axis=0)
                     ax.plot(
                         frames,
                         avg_trajectory,
@@ -227,9 +221,7 @@ class NeuronTrajectoryPlotWidget(QWidget):
             else:
                 # Average of all displayed neurons
                 if len(neurons_to_plot) > 0:
-                    avg_trajectory = np.mean(
-                        self.neuron_trajectories[neurons_to_plot], axis=0
-                    )
+                    avg_trajectory = np.mean(self.neuron_trajectories[neurons_to_plot], axis=0)
                     ax.plot(
                         frames,
                         avg_trajectory,
@@ -287,17 +279,13 @@ class NeuronTrajectoryPlotWidget(QWidget):
             fmt_parts.extend(["%.6f"] * num_neurons)  # Trajectory values
             fmt = ",".join(fmt_parts)
 
-            np.savetxt(
-                file_path, data, delimiter=",", header=header, comments="", fmt=fmt
-            )
+            np.savetxt(file_path, data, delimiter=",", header=header, comments="", fmt=fmt)
 
             QMessageBox.information(
                 self, "Export Successful", f"Trajectory data exported to:\n{file_path}"
             )
         except Exception as e:
-            QMessageBox.critical(
-                self, "Export Failed", f"Failed to export data:\n{str(e)}"
-            )
+            QMessageBox.critical(self, "Export Failed", f"Failed to export data:\n{str(e)}")
 
     def clear_plot(self) -> None:
         """Clear the plot and reset state."""
@@ -306,7 +294,5 @@ class NeuronTrajectoryPlotWidget(QWidget):
         self.neuron_trajectories = None
         self.quality_mask = None
         self.neuron_locations = None
-        self.status_label.setText(
-            "No neuron trajectories available. Run detection first."
-        )
+        self.status_label.setText("No neuron trajectories available. Run detection first.")
         self.export_btn.setEnabled(False)

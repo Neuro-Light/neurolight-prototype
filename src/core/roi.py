@@ -188,9 +188,7 @@ class ROI:
 
         # Ellipse equation: ((x-cx)/rx)^2 + ((y-cy)/ry)^2 <= 1
         if rx > 0 and ry > 0:
-            ellipse_mask = ((x_coords - cx) / rx) ** 2 + (
-                (y_coords - cy) / ry
-            ) ** 2 <= 1
+            ellipse_mask = ((x_coords - cx) / rx) ** 2 + ((y_coords - cy) / ry) ** 2 <= 1
             mask[ellipse_mask] = 255
 
         return mask

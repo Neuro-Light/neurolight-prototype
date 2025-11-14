@@ -248,9 +248,7 @@ class ImageViewer(QWidget):
         else:
             # Filter to only allow TIF and GIF files
             allowed_extensions = {".tif", ".tiff", ".gif"}
-            filtered_paths = [
-                p for p in paths if Path(p).suffix.lower() in allowed_extensions
-            ]
+            filtered_paths = [p for p in paths if Path(p).suffix.lower() in allowed_extensions]
 
             if filtered_paths:
                 self.set_stack(filtered_paths)
@@ -258,18 +256,12 @@ class ImageViewer(QWidget):
                 # Show message if no valid files were dropped
                 from PySide6.QtWidgets import QMessageBox
 
-                QMessageBox.warning(
-                    self, "Invalid Files", "Only TIF and GIF files are supported."
-                )
+                QMessageBox.warning(self, "Invalid Files", "Only TIF and GIF files are supported.")
 
     def _numpy_to_qimage(self, arr: np.ndarray) -> QImage:
         if arr.ndim == 2:
             h, w = arr.shape
-            fmt = (
-                QImage.Format_Grayscale8
-                if arr.dtype != np.uint16
-                else QImage.Format_Grayscale16
-            )
+            fmt = QImage.Format_Grayscale8 if arr.dtype != np.uint16 else QImage.Format_Grayscale16
             bytes_per_line = arr.strides[0]
             return QImage(arr.data, w, h, bytes_per_line, fmt)
         if arr.ndim == 3:
@@ -338,9 +330,7 @@ class ImageViewer(QWidget):
         self._update_adjustment_labels()
         self._show_current()
         # Emit signal so MainWindow can save to experiment
-        self.displaySettingsChanged.emit(
-            self.exposure_slider.value(), self.contrast_slider.value()
-        )
+        self.displaySettingsChanged.emit(self.exposure_slider.value(), self.contrast_slider.value())
 
     # Function to convert to 8 bits
     def _ensure_uint8(self, arr: np.ndarray) -> np.ndarray:
@@ -568,9 +558,7 @@ class ImageViewer(QWidget):
     def _toggle_adjustment_mode(self) -> None:
         """Toggle ROI adjustment mode."""
         self.can_adjust_roi = not self.can_adjust_roi
-        self.adjust_roi_btn.setText(
-            "Finish Adjusting" if self.can_adjust_roi else "Adjust ROI"
-        )
+        self.adjust_roi_btn.setText("Finish Adjusting" if self.can_adjust_roi else "Adjust ROI")
 
         # Disable/enable other controls based on adjustment mode
         self.prev_btn.setEnabled(not self.can_adjust_roi)
@@ -662,16 +650,10 @@ class ImageViewer(QWidget):
         x, y, scale = coords
 
         # Check if adjusting existing ROI (only if adjustment mode is enabled)
-        if (
-            self.current_roi is not None
-            and not self.roi_selection_mode
-            and self.can_adjust_roi
-        ):
+        if self.current_roi is not None and not self.roi_selection_mode and self.can_adjust_roi:
             # Check which handle was clicked
             handle_size_image = int(10 / scale)  # Convert handle size to image coords
-            self.active_handle = self.current_roi.get_handle_at_point(
-                x, y, handle_size_image
-            )
+            self.active_handle = self.current_roi.get_handle_at_point(x, y, handle_size_image)
             if self.active_handle != ROIHandle.NONE:
                 self.roi_adjustment_mode = True
                 self.last_mouse_pos = QPoint(x, y)
@@ -694,11 +676,7 @@ class ImageViewer(QWidget):
         x, y, _ = coords
 
         # Handle ROI adjustment (only if adjustment mode is enabled)
-        if (
-            self.roi_adjustment_mode
-            and self.last_mouse_pos is not None
-            and self.can_adjust_roi
-        ):
+        if self.roi_adjustment_mode and self.last_mouse_pos is not None and self.can_adjust_roi:
             img = self.cache.get(self.index)
             if img is None:
                 img = self.handler.get_image_at_index(self.index)

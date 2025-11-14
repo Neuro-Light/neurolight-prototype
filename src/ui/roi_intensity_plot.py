@@ -28,9 +28,7 @@ class ROIIntensityPlotWidget(QWidget):
         layout = QVBoxLayout(self)
 
         # Label for status
-        self.status_label = QLabel(
-            "No ROI selected. Select an ROI in the image viewer."
-        )
+        self.status_label = QLabel("No ROI selected. Select an ROI in the image viewer.")
         self.status_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.status_label)
 
@@ -137,9 +135,7 @@ class ROIIntensityPlotWidget(QWidget):
                 self, "Export Successful", f"Intensity data exported to:\n{file_path}"
             )
         except Exception as e:
-            QMessageBox.critical(
-                self, "Export Failed", f"Failed to export data:\n{str(e)}"
-            )
+            QMessageBox.critical(self, "Export Failed", f"Failed to export data:\n{str(e)}")
 
     def clear_plot(self) -> None:
         """Clear the plot and reset state."""
