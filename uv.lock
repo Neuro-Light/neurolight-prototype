@@ -1510,6 +1510,7 @@ test = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "mypy" },
     { name = "ruff" },
 ]
 
@@ -1525,7 +1526,7 @@ requires-dist = [
     { name = "pystackreg", specifier = ">=0.2.8" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=7.0.0" },
     { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=4.0.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.3" },
     { name = "scikit-image", specifier = ">=0.21.0" },
     { name = "scipy", specifier = ">=1.11.0" },
     { name = "statsmodels", specifier = ">=0.14.0" },
@@ -1535,7 +1536,10 @@ requires-dist = [
 provides-extras = ["test", "dev"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "ruff", specifier = ">=0.14.3" }]
+dev = [
+    { name = "mypy", specifier = ">=1.0.0" },
+    { name = "ruff", specifier = ">=0.14.3" },
+]
 
 [[package]]
 name = "numpy"

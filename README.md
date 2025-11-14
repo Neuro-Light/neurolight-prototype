@@ -60,7 +60,7 @@ A powerful PySide6 desktop application for processing and analyzing large TIF im
    uv sync
    ```
 
-   This will automatically create a virtual environment (`.venv`) and install all dependencies into it.
+   This will automatically create a virtual environment (`.venv`) and install all runtime dependencies needed to run the application.
 
 4. **Launch the application**
 
@@ -89,6 +89,28 @@ A powerful PySide6 desktop application for processing and analyzing large TIF im
    source .venv/bin/activate
    neurolight
    ```
+
+### Development Tools (Optional)
+
+For contributors and developers who want to run linting, type checking, or tests:
+
+```bash
+# Install development tools (ruff, mypy)
+uv sync --group dev
+
+# Install test tools (pytest, pytest-cov)
+uv sync --extra test
+
+# Or install everything at once
+uv sync --group dev --extra test
+```
+
+**Note:** These tools are not required to run the application. They're only needed if you plan to:
+- Contribute code (linting and type checking)
+- Run the test suite
+- Develop new features
+
+For detailed information about development tools and how to use them, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ---
 
@@ -324,8 +346,21 @@ tests/
 
 ### Running Tests
 
+First, install test dependencies:
+
 ```bash
-uv sync --all-extras  # Install with test dependencies
+uv sync --extra test
+```
+
+Then run the tests:
+
+```bash
+uv run pytest tests/
+```
+
+Or if you've manually activated the virtual environment:
+
+```bash
 pytest tests/
 ```
 
