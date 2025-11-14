@@ -6,7 +6,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from PySide6.QtCore import Qt, Signal, QRect, QPoint
-from PySide6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QBrush, QIcon, QMovie
+from PySide6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QBrush, QMovie
 from PySide6.QtWidgets import (
     QLabel,
     QSlider,
