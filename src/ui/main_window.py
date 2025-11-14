@@ -1,18 +1,14 @@
 from __future__ import annotations
 
 import logging
-import sys
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QMainWindow,
     QFileDialog,
     QSplitter,
-    QWidget,
-    QVBoxLayout,
-    QLabel,
     QMessageBox,
     QApplication,
     QDialog,
@@ -43,16 +39,16 @@ _log_file.parent.mkdir(parents=True, exist_ok=True)
 # Check if logging is already configured at the module level
 if not logger.handlers:
     # Create file handler with append mode
-    file_handler = logging.FileHandler(_log_file, encoding="utf-8", mode='a')
+    file_handler = logging.FileHandler(_log_file, encoding="utf-8", mode="a")
     file_handler.setLevel(logging.ERROR)
-    
+
     # Create formatter - logger.exception() automatically includes traceback
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
     file_handler.setFormatter(formatter)
-    
+
     # Add handler to logger
     logger.addHandler(file_handler)
     logger.setLevel(logging.ERROR)
@@ -111,17 +107,17 @@ class MainWindow(QMainWindow):
 
         menubar.addMenu("Edit").addAction("Experiment Settings")
         tools_menu = menubar.addMenu("Tools")
-        
+
         # Add crop action
         crop_action = QAction("Crop Stack to ROI", self)
         crop_action.triggered.connect(self._crop_stack_to_roi)
         tools_menu.addAction(crop_action)
-        
+
         # Add alignment action
         align_action = QAction("Align Images", self)
         align_action.triggered.connect(self._align_images)
         tools_menu.addAction(align_action)
-        
+
         tools_menu.addAction("Generate GIF")
         tools_menu.addAction("Run Analysis")
         menubar.addMenu("Help").addAction("About")
@@ -169,22 +165,20 @@ class MainWindow(QMainWindow):
         """
         Show non-blocking feedback when save fails during close.
         Uses status bar message to inform user without blocking the close flow.
-        
+
         Args:
             error_message: The error message string (also logged via logger.exception)
         """
         log_path = _log_file
-        status_message = (
-            f"Save failed during close. Error logged to: {log_path}"
-        )
-        
+        status_message = f"Save failed during close. Error logged to: {log_path}"
+
         # Show status bar message (non-blocking, brief display)
         # This will be visible briefly before the window closes if there's any delay
         status_bar = self.statusBar()
         if status_bar:
             # Show message for 5 seconds to increase visibility
             status_bar.showMessage(status_message, 5000)
-        
+
         # Note: The full exception with traceback is already logged via logger.exception()
         # in the closeEvent handler. We intentionally don't show a modal dialog here
         # as it would block the close flow. The error is fully logged to file, and
@@ -203,27 +197,29 @@ class MainWindow(QMainWindow):
         # Right panel: analysis dashboard
         self.analysis = AnalysisPanel()
         self.analysis.get_roi_plot_widget().experiment = self.experiment
-        
+
         # Set up neuron detection widget
         detection_widget = self.analysis.get_neuron_detection_widget()
         detection_widget.set_image_processor(self.image_processor)
         detection_widget.experiment = self.experiment
-        
+
         # Connect detection widget to trajectory plot widget
         trajectory_plot_widget = self.analysis.get_neuron_trajectory_plot_widget()
         detection_widget.set_trajectory_plot_callback(
-            lambda trajectories, quality_mask, locations: trajectory_plot_widget.plot_trajectories(
+            lambda trajectories,
+            quality_mask,
+            locations: trajectory_plot_widget.plot_trajectories(
                 trajectories, quality_mask, locations
             )
         )
-        
+
         # Connect detection widget to save experiment callback
         detection_widget.set_save_experiment_callback(self._save_neuron_detection)
 
         # Connect ROI selection to analysis and saving
         self.viewer.roiSelected.connect(self._on_roi_selected)
         self.viewer.roiSelected.connect(self._save_roi_to_experiment)
-        
+
         # Connect display settings changes to debounced saving
         self.viewer.displaySettingsChanged.connect(self._on_display_settings_changed)
 
@@ -248,8 +244,10 @@ class MainWindow(QMainWindow):
                 # Show loading dialog
                 loading_dialog = LoadingDialog(self)
                 loading_dialog.show()
-                loading_dialog.update_status("Loading image stack...", "This may take a few seconds")
-                
+                loading_dialog.update_status(
+                    "Loading image stack...", "This may take a few seconds"
+                )
+
                 # Process events to show the dialog
                 QApplication.processEvents()
 
@@ -259,35 +257,47 @@ class MainWindow(QMainWindow):
                         saved_files = self.experiment.image_stack_files
                         if saved_files and len(saved_files) > 0:
                             # Verify files still exist
-                            existing_files = [f for f in saved_files if Path(f).exists()]
+                            existing_files = [
+                                f for f in saved_files if Path(f).exists()
+                            ]
                             if len(existing_files) > 0:
-                                loading_dialog.update_status("Loading image stack...", f"Loading {len(existing_files)} selected images")
+                                loading_dialog.update_status(
+                                    "Loading image stack...",
+                                    f"Loading {len(existing_files)} selected images",
+                                )
                                 QApplication.processEvents()
                                 self.viewer.set_stack(existing_files)
                             else:
                                 # Files don't exist, fall back to directory
-                                loading_dialog.update_status("Loading image stack...", f"Selected files not found, loading from directory: {p}")
+                                loading_dialog.update_status(
+                                    "Loading image stack...",
+                                    f"Selected files not found, loading from directory: {p}",
+                                )
                                 QApplication.processEvents()
                                 self.viewer.set_stack(p)
                         else:
                             # No saved file list, load from directory
-                            loading_dialog.update_status("Loading image stack...", f"Loading images from: {p}")
+                            loading_dialog.update_status(
+                                "Loading image stack...", f"Loading images from: {p}"
+                            )
                             QApplication.processEvents()
                             self.viewer.set_stack(p)
-                        
+
                         # Load display settings (exposure, contrast)
                         display_settings = self.experiment.settings.get("display", {})
                         exposure = display_settings.get("exposure", 0)
                         contrast = display_settings.get("contrast", 0)
                         self.viewer.set_exposure(exposure)
                         self.viewer.set_contrast(contrast)
-                        
+
                         if self.experiment.roi:
-                            loading_dialog.update_status("Loading ROI...", "Restoring ROI selection")
+                            loading_dialog.update_status(
+                                "Loading ROI...", "Restoring ROI selection"
+                            )
                             QApplication.processEvents()
-                            
+
                             roi_data = self.experiment.roi
-                            
+
                             # Convert dict to ROI object
                             try:
                                 roi = ROI.from_dict(roi_data)
@@ -298,27 +308,35 @@ class MainWindow(QMainWindow):
                                     y=roi_data.get("y", 0),
                                     width=roi_data.get("width", 100),
                                     height=roi_data.get("height", 100),
-                                    shape=ROIShape.ELLIPSE
+                                    shape=ROIShape.ELLIPSE,
                                 )
 
                             def load_roi_and_plot():
                                 try:
-                                    loading_dialog.update_status("Restoring ROI and graphs...", "Loading analysis data")
+                                    loading_dialog.update_status(
+                                        "Restoring ROI and graphs...",
+                                        "Loading analysis data",
+                                    )
                                     QApplication.processEvents()
-                                    
+
                                     self.viewer.set_roi(roi)
                                     self._on_roi_selected(roi)
-                                    
+
                                     # Load neuron detection data if available
-                                    detection_data = self.experiment.get_neuron_detection_data()
+                                    detection_data = (
+                                        self.experiment.get_neuron_detection_data()
+                                    )
                                     if detection_data:
-                                        loading_dialog.update_status("Loading neuron detection data...", "Restoring detected neurons and trajectories")
+                                        loading_dialog.update_status(
+                                            "Loading neuron detection data...",
+                                            "Restoring detected neurons and trajectories",
+                                        )
                                         QApplication.processEvents()
                                         self._load_neuron_detection_data()
-                                    
+
                                     # Close loading dialog
                                     loading_dialog.close_dialog()
-                                except Exception as e:
+                                except Exception:
                                     loading_dialog.close_dialog()
                                     # Silently fail - data might be corrupted
 
@@ -326,7 +344,7 @@ class MainWindow(QMainWindow):
                         else:
                             # No ROI, just close the dialog
                             loading_dialog.close_dialog()
-                    except Exception as e:
+                    except Exception:
                         loading_dialog.close_dialog()
                         # Silently fail - loading might have issues
 
@@ -338,9 +356,12 @@ class MainWindow(QMainWindow):
                     # Show loading dialog for neuron detection data only
                     loading_dialog = LoadingDialog(self)
                     loading_dialog.show()
-                    loading_dialog.update_status("Loading neuron detection data...", "Restoring detected neurons and trajectories")
+                    loading_dialog.update_status(
+                        "Loading neuron detection data...",
+                        "Restoring detected neurons and trajectories",
+                    )
                     QApplication.processEvents()
-                    
+
                     try:
                         self._load_neuron_detection_data()
                         loading_dialog.close_dialog()
@@ -360,12 +381,12 @@ class MainWindow(QMainWindow):
     def _on_stack_loaded(self, directory_path: str) -> None:
         # ImageStackHandler already updates experiment association for path/count
         self.stack_handler.associate_with_experiment(self.experiment)
-        
+
         # Update detection widget with frame data
         frame_data = self.stack_handler.get_all_frames_as_array()
         detection_widget = self.analysis.get_neuron_detection_widget()
         detection_widget.set_frame_data(frame_data)
-        
+
         # Persist immediately if we know the path to the .nexp
         if self.current_experiment_path:
             try:
@@ -378,7 +399,7 @@ class MainWindow(QMainWindow):
     def _ensure_detection_data_saved(self) -> None:
         """
         Ensure neuron detection data is saved to the experiment.
-        
+
         Checks if detection data exists in the experiment, and if not,
         retrieves it from the detection widget and saves it.
         """
@@ -386,25 +407,27 @@ class MainWindow(QMainWindow):
         if detection_data is None or len(detection_data) == 0:
             # Data wasn't set, try to get it from the detection widget
             detection_widget = self.analysis.get_neuron_detection_widget()
-            if (hasattr(detection_widget, 'neuron_locations') and 
-                detection_widget.neuron_locations is not None and
-                len(detection_widget.neuron_locations) > 0):
+            if (
+                hasattr(detection_widget, "neuron_locations")
+                and detection_widget.neuron_locations is not None
+                and len(detection_widget.neuron_locations) > 0
+            ):
                 # Get detection params from widget if available
                 detection_params = None
-                if hasattr(detection_widget, 'cell_size_spin'):
+                if hasattr(detection_widget, "cell_size_spin"):
                     detection_params = {
-                        'cell_size': detection_widget.cell_size_spin.value(),
-                        'num_peaks': detection_widget.num_peaks_spin.value(),
-                        'correlation_threshold': detection_widget.correlation_threshold_spin.value(),
-                        'threshold_rel': detection_widget.threshold_rel_spin.value(),
-                        'apply_detrending': detection_widget.detrending_checkbox.isChecked()
+                        "cell_size": detection_widget.cell_size_spin.value(),
+                        "num_peaks": detection_widget.num_peaks_spin.value(),
+                        "correlation_threshold": detection_widget.correlation_threshold_spin.value(),
+                        "threshold_rel": detection_widget.threshold_rel_spin.value(),
+                        "apply_detrending": detection_widget.detrending_checkbox.isChecked(),
                     }
                 self.experiment.set_neuron_detection_data(
                     neuron_locations=detection_widget.neuron_locations,
                     neuron_trajectories=detection_widget.neuron_trajectories,
                     quality_mask=detection_widget.quality_mask,
                     mean_frame=detection_widget.mean_frame,
-                    detection_params=detection_params
+                    detection_params=detection_params,
                 )
 
     def _save_neuron_detection(self) -> None:
@@ -419,12 +442,16 @@ class MainWindow(QMainWindow):
                 self._capture_display_settings()
                 # Ensure neuron detection data is saved
                 self._ensure_detection_data_saved()
-                self.manager.save_experiment(self.experiment, self.current_experiment_path)
+                self.manager.save_experiment(
+                    self.experiment, self.current_experiment_path
+                )
             except Exception as e:
                 # Log error for debugging
-                logger.error(f"Failed to save neuron detection data: {e}", exc_info=True)
+                logger.error(
+                    f"Failed to save neuron detection data: {e}", exc_info=True
+                )
                 pass  # Silently fail for auto-save
-    
+
     def _save(self) -> None:
         if not self.current_experiment_path:
             self._save_as()
@@ -607,7 +634,9 @@ class MainWindow(QMainWindow):
                 _, height, width = frame_data.shape
                 # Create ROI mask (uint8 with 0 and 255) and convert to boolean
                 roi_mask_uint8 = roi.create_mask(width, height)
-                roi_mask = (roi_mask_uint8 > 0).astype(bool)  # Convert 0/255 to False/True
+                roi_mask = (roi_mask_uint8 > 0).astype(
+                    bool
+                )  # Convert 0/255 to False/True
                 detection_widget.set_roi_mask(roi_mask)
                 # Also update frame data in case it wasn't set before
                 detection_widget.set_frame_data(frame_data)
@@ -620,38 +649,41 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to analyze ROI:\n{str(e)}")
-    
+
     def _load_neuron_detection_data(self) -> None:
         """Load saved neuron detection data from experiment."""
         detection_data = self.experiment.get_neuron_detection_data()
         if detection_data is None:
             return
-        
+
         try:
             detection_widget = self.analysis.get_neuron_detection_widget()
-            
+
             # Check if we have all required data (mean_frame is optional - can be recalculated)
-            if ('neuron_locations' in detection_data and
-                'neuron_trajectories' in detection_data and
-                'quality_mask' in detection_data):
-                
+            if (
+                "neuron_locations" in detection_data
+                and "neuron_trajectories" in detection_data
+                and "quality_mask" in detection_data
+            ):
                 # Load the data into the detection widget
                 # mean_frame is optional - will be recalculated if not present
                 detection_widget.load_detection_data(
-                    neuron_locations=detection_data['neuron_locations'],
-                    neuron_trajectories=detection_data['neuron_trajectories'],
-                    quality_mask=detection_data['quality_mask'],
-                    mean_frame=detection_data.get('mean_frame'),  # Optional - can be recalculated
-                    detection_params=detection_data.get('detection_params')
+                    neuron_locations=detection_data["neuron_locations"],
+                    neuron_trajectories=detection_data["neuron_trajectories"],
+                    quality_mask=detection_data["quality_mask"],
+                    mean_frame=detection_data.get(
+                        "mean_frame"
+                    ),  # Optional - can be recalculated
+                    detection_params=detection_data.get("detection_params"),
                 )
-        except Exception as e:
+        except Exception:
             # Silently fail - detection data might be corrupted
             pass
 
     def _capture_display_settings(self) -> None:
         """
         Capture current display settings (exposure, contrast) from viewer into experiment.
-        
+
         This method consolidates the logic for updating display settings in the experiment
         and should be called before saving, closing, or exiting.
         """
@@ -659,11 +691,11 @@ class MainWindow(QMainWindow):
             self.experiment.settings["display"] = {}
         self.experiment.settings["display"]["exposure"] = self.viewer.get_exposure()
         self.experiment.settings["display"]["contrast"] = self.viewer.get_contrast()
-    
+
     def _on_display_settings_changed(self, exposure: int, contrast: int) -> None:
         """
         Handle display settings changes with debounced saving.
-        
+
         This method is called when the user adjusts exposure or contrast sliders.
         It stores the pending values and starts/resets a timer for debounced saving.
         """
@@ -672,11 +704,11 @@ class MainWindow(QMainWindow):
         # Restart the timer (debounce: wait 500ms after last change before saving)
         self._display_settings_timer.stop()
         self._display_settings_timer.start(500)
-    
+
     def _flush_pending_display_settings(self) -> None:
         """
         Immediately flush any pending display settings without waiting for the timer.
-        
+
         This is called when manually saving, closing, or exiting to ensure
         all pending changes are persisted immediately.
         """
@@ -684,11 +716,11 @@ class MainWindow(QMainWindow):
         self._display_settings_timer.stop()
         if self._pending_exposure is not None and self._pending_contrast is not None:
             self._persist_display_settings()
-    
+
     def _persist_display_settings(self) -> None:
         """
         Persist pending display settings to experiment and save to file.
-        
+
         This method is called by the debounce timer after the user stops adjusting sliders,
         or immediately when flushing pending settings.
         """
@@ -698,11 +730,11 @@ class MainWindow(QMainWindow):
                 self.experiment.settings["display"] = {}
             self.experiment.settings["display"]["exposure"] = self._pending_exposure
             self.experiment.settings["display"]["contrast"] = self._pending_contrast
-            
+
             # Clear pending values
             self._pending_exposure = None
             self._pending_contrast = None
-            
+
             # Persist to file if we have a path
             if self.current_experiment_path:
                 try:
@@ -756,48 +788,43 @@ class MainWindow(QMainWindow):
             self.manager.save_experiment(self.experiment, self.current_experiment_path)
         except Exception:
             pass
-    
+
     def _crop_stack_to_roi(self) -> None:
         """Crop the image stack to the current ROI and save as new stack."""
         current_roi = self.viewer.get_current_roi()
         if current_roi is None:
             QMessageBox.warning(
-                self,
-                "No ROI Selected",
-                "Please select an ROI before cropping."
+                self, "No ROI Selected", "Please select an ROI before cropping."
             )
             return
-        
+
         try:
             # Load all frames
             frame_data = self.stack_handler.get_all_frames_as_array()
             if frame_data is None:
-                QMessageBox.warning(
-                    self,
-                    "No Image Data",
-                    "No image stack loaded."
-                )
+                QMessageBox.warning(self, "No Image Data", "No image stack loaded.")
                 return
-            
+
             # Ask user for output directory
             output_dir = QFileDialog.getExistingDirectory(
-                self,
-                "Select Output Directory for Cropped Stack",
-                ""
+                self, "Select Output Directory for Cropped Stack", ""
             )
             if not output_dir:
                 return
-            
+
             # Crop stack
             cropped_stack = self.image_processor.crop_stack_to_roi(
-                frame_data, current_roi, apply_mask=(current_roi.shape == ROIShape.ELLIPSE)
+                frame_data,
+                current_roi,
+                apply_mask=(current_roi.shape == ROIShape.ELLIPSE),
             )
-            
+
             # Save cropped frames
             from PIL import Image
+
             output_path = Path(output_dir)
             original_files = self.stack_handler.files
-            
+
             for i, cropped_frame in enumerate(cropped_stack):
                 # Generate output filename
                 if i < len(original_files):
@@ -805,44 +832,48 @@ class MainWindow(QMainWindow):
                     output_file = output_path / f"{original_name}_cropped.tif"
                 else:
                     output_file = output_path / f"frame_{i:04d}_cropped.tif"
-                
+
                 # Convert frame to uint8 if needed
                 if cropped_frame.dtype != np.uint8:
                     # Normalize to 0-255 range
                     frame_min = np.min(cropped_frame)
                     frame_max = np.max(cropped_frame)
-                    
+
                     if frame_max > frame_min:
                         # Scale to 0-255
-                        normalized = (cropped_frame - frame_min) / (frame_max - frame_min)
+                        normalized = (cropped_frame - frame_min) / (
+                            frame_max - frame_min
+                        )
                         cropped_frame = (normalized * 255).astype(np.uint8)
                     else:
                         # Constant frame - convert to uint8 with proper scaling
                         if np.issubdtype(cropped_frame.dtype, np.floating):
                             # For float dtypes, scale to 0-255 range
-                            uint8_value = np.clip(np.round(frame_min * 255), 0, 255).astype(np.uint8)
+                            uint8_value = np.clip(
+                                np.round(frame_min * 255), 0, 255
+                            ).astype(np.uint8)
                         else:
                             # For integer dtypes, just clip to 0-255
                             uint8_value = np.clip(frame_min, 0, 255).astype(np.uint8)
-                        cropped_frame = np.full_like(cropped_frame, uint8_value, dtype=np.uint8)
-                
+                        cropped_frame = np.full_like(
+                            cropped_frame, uint8_value, dtype=np.uint8
+                        )
+
                 # Save frame
                 img = Image.fromarray(cropped_frame)
                 img.save(str(output_file))
-            
+
             QMessageBox.information(
                 self,
                 "Cropping Complete",
-                f"Cropped {len(cropped_stack)} frames to {output_dir}"
+                f"Cropped {len(cropped_stack)} frames to {output_dir}",
             )
-            
+
         except Exception as e:
             QMessageBox.critical(
-                self,
-                "Cropping Error",
-                f"Failed to crop image stack:\n{str(e)}"
+                self, "Cropping Error", f"Failed to crop image stack:\n{str(e)}"
             )
-    
+
     def _align_images(self) -> None:
         """Align images in the stack."""
         # Check if images are loaded
@@ -851,152 +882,154 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "No Images",
-                "No image stack loaded. Please load an image stack first."
+                "No image stack loaded. Please load an image stack first.",
             )
             return
-        
+
         if num_frames < 2:
             QMessageBox.warning(
                 self,
                 "Not Enough Images",
-                "At least 2 images are required for alignment."
+                "At least 2 images are required for alignment.",
             )
             return
-        
+
         # Show alignment dialog
         dialog = AlignmentDialog(self, num_frames)
         if dialog.exec() != QDialog.Accepted:
             return
-        
+
         params = dialog.get_parameters()
-        
+
         # Show progress dialog
         progress_dialog = AlignmentProgressDialog(self, num_frames)
         progress_dialog.show()
         QApplication.processEvents()
-        
+
         try:
             # Load all frames
             progress_dialog.update_progress(0, num_frames, "Loading image stack...")
             QApplication.processEvents()
-            
+
             frame_data = self.stack_handler.get_all_frames_as_array()
             if frame_data is None:
                 progress_dialog.close()
                 QMessageBox.warning(
-                    self,
-                    "No Image Data",
-                    "Failed to load image stack."
+                    self, "No Image Data", "Failed to load image stack."
                 )
                 return
-            
+
             # Progress callback - returns False if cancelled
             def progress_callback(completed: int, total: int, message: str) -> bool:
                 progress_dialog.update_progress(completed, total, message)
                 QApplication.processEvents()
                 # Return False if cancelled (to stop alignment), True to continue
                 return not progress_dialog.is_cancelled()
-            
+
             # Perform alignment
             progress_dialog.update_progress(0, num_frames, "Starting alignment...")
             QApplication.processEvents()
-            
+
             aligned_stack, transformation_matrices, confidence_scores = (
                 self.image_processor.align_image_stack(
                     frame_data,
                     transform_type=params["transform_type"],
                     reference=params["reference"],
-                    progress_callback=progress_callback
+                    progress_callback=progress_callback,
                 )
             )
-            
+
             # Check if alignment was cancelled
             if progress_dialog.is_cancelled():
                 progress_dialog.close()
                 QMessageBox.information(
                     self,
                     "Alignment Cancelled",
-                    "Image alignment was cancelled. No changes were saved."
+                    "Image alignment was cancelled. No changes were saved.",
                 )
                 return
-            
+
             # Check alignment quality
-            avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.0
+            avg_confidence = (
+                sum(confidence_scores) / len(confidence_scores)
+                if confidence_scores
+                else 0.0
+            )
             low_confidence_frames = [
                 i for i, conf in enumerate(confidence_scores) if conf < 0.5
             ]
-            
+
             progress_dialog.close()
-            
+
             # Show alignment results
             result_message = (
                 f"Alignment complete!\n\n"
                 f"Average confidence: {avg_confidence:.2%}\n"
                 f"Frames with low confidence (<50%): {len(low_confidence_frames)}"
             )
-            
+
             if low_confidence_frames:
-                result_message += f"\n\nLow confidence frames: {low_confidence_frames[:10]}"
+                result_message += (
+                    f"\n\nLow confidence frames: {low_confidence_frames[:10]}"
+                )
                 if len(low_confidence_frames) > 10:
                     result_message += f" (+{len(low_confidence_frames) - 10} more)"
-            
+
             reply = QMessageBox.question(
                 self,
                 "Alignment Complete",
                 result_message + "\n\nWould you like to save the aligned images?",
                 QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes
+                QMessageBox.Yes,
             )
-            
+
             if reply == QMessageBox.Yes:
                 # Ask user for output directory
                 output_dir = QFileDialog.getExistingDirectory(
-                    self,
-                    "Select Output Directory for Aligned Stack",
-                    ""
+                    self, "Select Output Directory for Aligned Stack", ""
                 )
                 if not output_dir:
                     return
-                
+
                 # Save aligned images
                 self._save_aligned_stack(
                     aligned_stack,
                     transformation_matrices,
                     confidence_scores,
                     output_dir,
-                    params
+                    params,
                 )
-                
+
                 # Ask if user wants to load aligned images
                 load_reply = QMessageBox.question(
                     self,
                     "Load Aligned Images?",
                     "Would you like to load the aligned images into the viewer?",
                     QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.Yes
+                    QMessageBox.Yes,
                 )
-                
+
                 if load_reply == QMessageBox.Yes:
                     self.viewer.set_stack(output_dir)
-            
+
         except Exception as e:
             progress_dialog.close()
             QMessageBox.critical(
-                self,
-                "Alignment Error",
-                f"Failed to align images:\n{str(e)}"
+                self, "Alignment Error", f"Failed to align images:\n{str(e)}"
             )
-    
-    def _apply_exposure_contrast(self, arr: np.ndarray, exposure: int, contrast: int) -> np.ndarray:
+
+    def _apply_exposure_contrast(
+        self, arr: np.ndarray, exposure: int, contrast: int
+    ) -> np.ndarray:
         """
         Apply exposure and contrast adjustments to an image array.
         Uses the same logic as ImageViewer._apply_adjustments.
-        
+
         Args:
             arr: Input image array
             exposure: Exposure value (-100 to 100)
             contrast: Contrast value (-100 to 100)
-            
+
         Returns:
             Adjusted image array (normalized to 0-1 range)
         """
@@ -1007,7 +1040,7 @@ class MainWindow(QMainWindow):
         min_pixel = float(np.min(new_arr))
         max_pixel = float(np.max(new_arr))
         pixel_range = max_pixel - min_pixel
-        
+
         # Normalize to 0-1 range
         if pixel_range != 0:
             new_arr = (new_arr - min_pixel) / pixel_range
@@ -1018,7 +1051,7 @@ class MainWindow(QMainWindow):
                 new_arr = new_arr / max_possible
             else:
                 new_arr = np.clip(new_arr, 0, 1)
-        
+
         # Apply exposure and contrast
         ev = exposure
         cv = contrast
@@ -1027,41 +1060,41 @@ class MainWindow(QMainWindow):
         # 0.5 to preserve greyscale
         new_arr = ((new_arr - 0.5) * contrast_factor + 0.5) * exposure_factor
         new_arr = np.clip(new_arr, 0, 1)
-        
+
         return new_arr
 
     def _apply_exposure_contrast_global(
-        self, 
-        arr: np.ndarray, 
-        exposure: int, 
+        self,
+        arr: np.ndarray,
+        exposure: int,
         contrast: int,
         global_min: float,
-        global_range: float
+        global_range: float,
     ) -> np.ndarray:
         """
         Apply exposure and contrast adjustments to an image array using global normalization.
         This ensures consistent adjustments across all frames in a stack.
-        
+
         Args:
             arr: Input image array
             exposure: Exposure value (-100 to 100)
             contrast: Contrast value (-100 to 100)
             global_min: Global minimum value across all frames
             global_range: Global range (global_max - global_min)
-            
+
         Returns:
             Adjusted image array (normalized to 0-1 range)
         """
         # Convert to float32
         new_arr = arr.astype(np.float32, copy=True)
-        
+
         # Normalize to 0-1 range using global min/max for consistency
         if global_range != 0:
             new_arr = (new_arr - global_min) / global_range
         else:
             # If all pixels are equal across entire stack
             new_arr = np.clip(new_arr, 0, 1)
-        
+
         # Apply exposure and contrast
         ev = exposure
         cv = contrast
@@ -1070,7 +1103,7 @@ class MainWindow(QMainWindow):
         # 0.5 to preserve greyscale
         new_arr = ((new_arr - 0.5) * contrast_factor + 0.5) * exposure_factor
         new_arr = np.clip(new_arr, 0, 1)
-        
+
         return new_arr
 
     def _save_aligned_stack(
@@ -1079,18 +1112,18 @@ class MainWindow(QMainWindow):
         transformation_matrices: np.ndarray,
         confidence_scores: list,
         output_dir: str,
-        params: dict
+        params: dict,
     ) -> None:
         """Save aligned image stack to disk (raw aligned images, no exposure/contrast adjustments)."""
         import tifffile
         from pystackreg.util import to_uint16
-        
+
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        
+
         # Convert to uint16 for saving (preserve original data range)
         aligned_stack_uint16 = to_uint16(aligned_stack)
-        
+
         # Save aligned images (raw, without exposure/contrast adjustments)
         # Users can adjust exposure/contrast in the viewer after loading
         for i, aligned_frame in enumerate(aligned_stack_uint16):
@@ -1100,34 +1133,37 @@ class MainWindow(QMainWindow):
                 output_file = output_path / f"{original_name}_aligned.tif"
             else:
                 output_file = output_path / f"frame_{i:04d}_aligned.tif"
-            
+
             # Save using tifffile (preserves 16-bit precision)
             tifffile.imwrite(str(output_file), aligned_frame)
-        
+
         # Save transformation matrices as numpy array
         matrices_path = output_path / "transformation_matrices.npy"
         np.save(str(matrices_path), transformation_matrices)
-        
+
         # Save alignment metadata as JSON
         import json
+
         transform_data = {
             "transform_type": params.get("transform_type", "rigid_body"),
             "reference": params.get("reference", "first"),
             "reference_index": params.get("reference_index", 0),
             "num_frames": len(aligned_stack),
             "confidence_scores": [float(conf) for conf in confidence_scores],
-            "average_confidence": float(sum(confidence_scores) / len(confidence_scores)) if confidence_scores else 0.0
+            "average_confidence": float(sum(confidence_scores) / len(confidence_scores))
+            if confidence_scores
+            else 0.0,
         }
-        
+
         metadata_path = output_path / "alignment_metadata.json"
-        with open(metadata_path, 'w') as f:
+        with open(metadata_path, "w") as f:
             json.dump(transform_data, f, indent=2)
-        
+
         QMessageBox.information(
             self,
             "Save Complete",
             f"Aligned {len(aligned_stack)} images saved to {output_dir}\n"
-            f"Transformation matrices and metadata saved."
+            f"Transformation matrices and metadata saved.",
         )
 
     def _export_experiment(self) -> None:
@@ -1135,53 +1171,49 @@ class MainWindow(QMainWindow):
         try:
             # Flush any pending display settings before exporting
             self._flush_pending_display_settings()
-            
+
             # Save current ROI to experiment before exporting
             current_roi = self.viewer.get_current_roi()
             if current_roi is not None:
                 self.experiment.roi = current_roi.to_dict()
-            
+
             # Capture current display settings before exporting
             self._capture_display_settings()
-            
+
             # Get export location
             default_name = f"{self.experiment.name}_export.nexp"
             if self.current_experiment_path:
                 # Suggest a location near the original file
                 original_path = Path(self.current_experiment_path)
-                default_name = str(original_path.parent / f"{self.experiment.name}_export.nexp")
-            
+                default_name = str(
+                    original_path.parent / f"{self.experiment.name}_export.nexp"
+                )
+
             file_path, _ = QFileDialog.getSaveFileName(
                 self,
                 "Export Experiment",
                 default_name,
-                "Neurolight Experiment (*.nexp);;All Files (*)"
+                "Neurolight Experiment (*.nexp);;All Files (*)",
             )
-            
+
             if not file_path:
                 return
-            
+
             # Ensure .nexp extension
             if not file_path.endswith(".nexp"):
                 file_path += ".nexp"
-            
+
             # Export experiment data using the manager's save method
             # This ensures the file format matches the native .nexp format
             if self.manager.save_experiment(self.experiment, file_path):
                 QMessageBox.information(
-                    self,
-                    "Export Successful",
-                    f"Experiment exported to:\n{file_path}"
+                    self, "Export Successful", f"Experiment exported to:\n{file_path}"
                 )
             else:
                 QMessageBox.warning(
-                    self,
-                    "Export Failed",
-                    "Failed to export experiment."
+                    self, "Export Failed", "Failed to export experiment."
                 )
         except Exception as e:
             QMessageBox.critical(
-                self,
-                "Export Failed",
-                f"Failed to export experiment:\n{str(e)}"
+                self, "Export Failed", f"Failed to export experiment:\n{str(e)}"
             )

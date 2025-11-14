@@ -1508,6 +1508,11 @@ test = [
     { name = "pytest-cov" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "ruff" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "imageio", specifier = ">=2.31.0" },
@@ -1528,6 +1533,9 @@ requires-dist = [
     { name = "ultralytics", specifier = ">=8.0.0" },
 ]
 provides-extras = ["test", "dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "ruff", specifier = ">=0.14.3" }]
 
 [[package]]
 name = "numpy"

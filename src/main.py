@@ -1,4 +1,3 @@
-import os
 import sys
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QTimer
@@ -37,4 +36,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

@@ -11,7 +11,9 @@ class GifGenerator:
         self.frames: List[np.ndarray] = []
         self.fps = fps
 
-    def generate_gif(self, image_stack: List[np.ndarray], output_path: str, fps: int = 10) -> str:
+    def generate_gif(
+        self, image_stack: List[np.ndarray], output_path: str, fps: int = 10
+    ) -> str:
         imageio.mimsave(output_path, image_stack, duration=1.0 / max(1, fps))
         return output_path
 
@@ -22,4 +24,3 @@ class GifGenerator:
         # Placeholder: no-op copy in MVP
         with open(input_path, "rb") as src, open(output_path, "wb") as dst:
             dst.write(src.read())
-

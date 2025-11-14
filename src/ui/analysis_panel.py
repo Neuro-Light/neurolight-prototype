@@ -24,16 +24,15 @@ class AnalysisPanel(QTabWidget):
             self.addTab(w, title)
         else:
             self.addTab(widget, title)
-    
+
     def get_roi_plot_widget(self) -> ROIIntensityPlotWidget:
         """Get the ROI intensity plot widget."""
         return self.roi_plot_widget
-    
+
     def get_neuron_detection_widget(self) -> NeuronDetectionWidget:
         """Get the neuron detection widget."""
         return self.neuron_detection_widget
-    
+
     def get_neuron_trajectory_plot_widget(self) -> NeuronTrajectoryPlotWidget:
         """Get the neuron trajectory plot widget."""
         return self.neuron_trajectory_plot_widget
-
