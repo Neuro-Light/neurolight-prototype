@@ -6,7 +6,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from PySide6.QtCore import Qt, Signal, QRect, QPoint
-from PySide6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QBrush, QIcon
+from PySide6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QBrush, QMovie
 from PySide6.QtWidgets import (
     QLabel,
     QSlider,
@@ -15,9 +15,13 @@ from PySide6.QtWidgets import (
     QPushButton,
     QHBoxLayout,
     QStyle,
+    QMessageBox,
+    QFileDialog,
+    QDialog,
 )
 
 from utils.file_handler import ImageStackHandler
+from core.gif_generator import GifGenerator
 from core.roi import ROI, ROIShape, ROIHandle
 
 
@@ -43,15 +47,20 @@ class _LRUCache:
 
 class ImageViewer(QWidget):
     stackLoaded = Signal(str)
-    roiSelected = Signal(object)  # Emits ROI object
-    roiChanged = Signal(object)  # Emits ROI object when adjusted
-    displaySettingsChanged = Signal(int, int)  # Emits (exposure, contrast) when display settings change
+    # Emits ROI object
+    roiSelected = Signal(object)
+    # Emits when ROI is changed
+    roiChanged = Signal(object)
+    # Emits when exposure or contrast settings are changed, with new values
+    displaySettingsChanged = Signal(int, int)
 
     def __init__(self, handler: ImageStackHandler) -> None:
         super().__init__()
         self.handler = handler
         self.index = 0
         self.cache = _LRUCache(20)
+        # Store the path of the last generated GIF for previewing
+        self._last_gif_path: Optional[Path] = None
 
         # ROI selection state
         self.roi_selection_mode = False
@@ -105,12 +114,21 @@ class ImageViewer(QWidget):
         self.next_btn = QPushButton("Next")
         self.roi_btn = QPushButton("Select ROI")
         self.adjust_roi_btn = QPushButton("Adjust ROI")
-        self.adjust_roi_btn.setVisible(False)  # Hidden until ROI exists
+        # Initially hide the adjust ROI button until an ROI is created
+        self.adjust_roi_btn.setVisible(False) 
+        # Make a button o create GIF
+        self.create_gif_btn = QPushButton("Create GIF")
+        # Make a button to preview GIF
+        self.preview_gif_btn = QPushButton("Preview GIF")
+        self.preview_gif_btn.setEnabled(False)
         
         self.prev_btn.clicked.connect(self.prev_image)
         self.next_btn.clicked.connect(self.next_image)
         self.roi_btn.clicked.connect(self._toggle_roi_mode)
         self.adjust_roi_btn.clicked.connect(self._toggle_adjustment_mode)
+        # Connect the create GIF and preview GIF buttons to their respective functions
+        self.create_gif_btn.clicked.connect(self._create_gif)
+        self.preview_gif_btn.clicked.connect(self._preview_gif)
 
         self.slider = QSlider(Qt.Horizontal)
         self.slider.valueChanged.connect(self._on_slider)
@@ -144,6 +162,10 @@ class ImageViewer(QWidget):
         nav.addWidget(self.next_btn)
         nav.addWidget(self.roi_btn)
         nav.addWidget(self.adjust_roi_btn)
+        # Add the create and preview GIF buttons to the navigation layout
+        gif_layout = QHBoxLayout()
+        gif_layout.addWidget(self.create_gif_btn)
+        gif_layout.addWidget(self.preview_gif_btn)
 
         # New box for the exposure and  contrast slider
         adjustments_layout = QVBoxLayout()
@@ -160,6 +182,8 @@ class ImageViewer(QWidget):
         # Image gets most of the space (stretch factor 1)
         layout.addWidget(self.image_container, 1)
         layout.addLayout(nav)
+        # Add the GIF buttons below the navigation buttons
+        layout.addLayout(gif_layout)
         layout.addWidget(self.slider)
         # Added the layout for the exposure and contrast
         layout.addLayout(adjustments_layout)
@@ -253,7 +277,6 @@ class ImageViewer(QWidget):
                 self.set_stack(filtered_paths)
             else:
                 # Show message if no valid files were dropped
-                from PySide6.QtWidgets import QMessageBox
                 QMessageBox.warning(
                     self,
                     "Invalid Files",
@@ -495,8 +518,6 @@ class ImageViewer(QWidget):
     
     def _open_upload_dialog(self) -> None:
         """Open file dialog to select TIF or GIF images."""
-        from PySide6.QtWidgets import QFileDialog
-        
         files, _ = QFileDialog.getOpenFileNames(
             self,
             "Select Image Files",
@@ -527,10 +548,63 @@ class ImageViewer(QWidget):
         self.index = value
         self._show_current()
 
+
+    def _create_gif(self) -> None:
+        image_count = self.handler.get_image_count()
+        if image_count == 0:
+            QMessageBox.information(self, "No Images", "Load images before creating a GIF.")
+            return
+
+        if not self.handler.files:
+            QMessageBox.warning(self, "GIF Error", "No image files loaded.")
+            return
+
+        image_dir = Path(self.handler.files[0]).parent
+        output_path = image_dir / "animation.gif"
+
+        try:
+            raw_stack = [self.handler.get_image_at_index(i) for i in range(image_count)]
+            image_stack = [self._ensure_uint8(frame) for frame in raw_stack]
+            generator = GifGenerator(fps=10)
+            generator.generate_gif(image_stack, str(output_path), fps=10)
+        except (ValueError, OSError) as exc:
+            QMessageBox.warning(self, "GIF Error", f"Could not create GIF:\n{exc}")
+            return
+
+        self._last_gif_path = output_path
+        self.preview_gif_btn.setEnabled(True)
+        QMessageBox.information(self, "GIF Created", f"Saved GIF to:\n{output_path}")
+
+    def _preview_gif(self) -> None:
+        if not self._last_gif_path or not self._last_gif_path.exists():
+            QMessageBox.information(self, "No GIF", "Create a GIF first to preview it.")
+            self.preview_gif_btn.setEnabled(False)
+            return
+        # for preview of the gif window
+        dialog = QDialog(self)
+        dialog.setWindowTitle("GIF Preview")
+        dialog_layout = QVBoxLayout(dialog)
+
+        preview_label = QLabel(alignment=Qt.AlignCenter)
+        movie = QMovie(str(self._last_gif_path))
+        # Check if the movie loaded successfully
+        if not movie.isValid():
+            QMessageBox.warning(self, "Preview Error", "Could not load the GIF for preview.")
+            return
+        # Set the movie to the label and start playing the GIF
+        preview_label.setMovie(movie)
+        dialog_layout.addWidget(preview_label)
+        # Add a close button to the dialog
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        dialog_layout.addWidget(close_btn, alignment=Qt.AlignCenter)
+        # start the gif
+        movie.start()
+        dialog._movie = movie  
+        dialog.exec()
+
     def _toggle_roi_mode(self) -> None:
         """Toggle ROI selection mode."""
-        from PySide6.QtWidgets import QMessageBox
-        
         # If we're not in selection mode and there's an existing ROI, confirm before starting new selection
         if not self.roi_selection_mode and self.current_roi is not None:
             reply = QMessageBox.question(
@@ -793,4 +867,3 @@ class ImageViewer(QWidget):
         self._update_roi_button_text()
         # Redraw to show the ROI with correct scaling
         self._show_current()
-
