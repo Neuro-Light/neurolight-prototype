@@ -43,11 +43,13 @@ In this project, we use `uvx` to run Ruff. `uvx` is uv's tool runner that automa
 Ruff is included in the development dependencies, but you don't need to install it globally. Use `uvx` to run ruff without installation:
 
 ```bash
-# Sync dev dependencies (optional, for IDE integration)
+# Sync dev dependencies (installs ruff and mypy)
+# This is recommended for IDE integration and type checking
 uv sync --group dev
 
-# Or just use uvx - no installation needed!
+# Or just use uvx for ruff - no installation needed!
 # uvx automatically downloads and runs ruff
+# Note: MyPy still needs to be installed for type checking
 ```
 
 ### Configuration
@@ -219,8 +221,10 @@ uvx ruff check . --watch
 MyPy is included in the development dependencies:
 
 ```bash
-uv sync --extra dev
+uv sync --group dev
 ```
+
+This installs both Ruff and MyPy along with other dev tools.
 
 ### Configuration
 
@@ -555,13 +559,15 @@ uv build --wheel
 # Install all dependencies
 uv sync
 
-# Install with dev dependencies
+# Install with dev dependencies (ruff, mypy, etc.)
+# Uses [dependency-groups] dev
 uv sync --group dev
 
-# Install with test dependencies
+# Install with test dependencies (pytest, pytest-cov)
+# Uses [project.optional-dependencies] test
 uv sync --extra test
 
-# Install with all extras
+# Install with all extras (test dependencies)
 uv sync --all-extras
 
 # Run a command in the virtual environment

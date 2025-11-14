@@ -26,7 +26,7 @@ neurolight = "src.main:main"
 project-includes = ["**/*.py", "**/*.pyi"]
 project-excludes = ["**/node_modules/**", "**/__pycache__/**", "**/.venv/**"]
 use-ignore-files = true
-python-version = "3.11"
+python-version = "3.9"
 search-path = ["."]
 
 [tool.pyrefly.errors]
@@ -35,14 +35,16 @@ incompatible-assignment = true
 
 [project.optional-dependencies]
 test = ["pytest>=7.0.0", "pytest-cov>=4.0.0"]
-dev = ["ruff>=0.1.0", "mypy>=1.0.0"]
+# Note: dev dependencies are primarily managed via [dependency-groups] dev
+# This is kept for backward compatibility with tools that use optional-dependencies
+dev = ["ruff>=0.14.3", "mypy>=1.0.0"]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = ["ruff>=0.14.3"]
+dev = ["ruff>=0.14.3", "mypy>=1.0.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
