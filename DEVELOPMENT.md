@@ -385,20 +385,53 @@ project-excludes = [
 use-ignore-files = true
 
 # Target Python version
-python-version = "3.11"
+python-version = "3.9"
 
 # Search path
 search-path = ["."]
-
-[tool.pyrefly.errors]
-# Enable specific error checks
-missing-type-argument = true
-incompatible-assignment = true
 ```
 
 ### Usage
 
-Pyrefly typically runs automatically as part of your IDE or CI/CD pipeline. Check your IDE settings for Pyrefly integration.
+**Command Line:**
+
+```bash
+# Check all files
+pyrefly check
+
+# Check specific directory
+pyrefly check src/
+
+# Check specific file
+pyrefly check src/main.py
+
+# With error summary
+pyrefly check --summarize-errors
+```
+
+**IDE Integration:**
+
+Pyrefly can also run automatically as part of your IDE. For VS Code/Cursor:
+- Install the Pyrefly extension from the marketplace
+- It will automatically check your code as you type
+- Errors will appear in the Problems panel
+
+**Verifying It's Working:**
+
+Create a test file to verify Pyrefly is working:
+
+```python
+# test_pyrefly.py
+def test_function(x: int) -> str:
+    return x  # This should trigger a type error
+```
+
+Run:
+```bash
+pyrefly check test_pyrefly.py
+```
+
+If Pyrefly is working, it should report that `x` (an `int`) cannot be returned where a `str` is expected.
 
 ---
 

@@ -29,22 +29,18 @@ use-ignore-files = true
 python-version = "3.9"
 search-path = ["."]
 
-[tool.pyrefly.errors]
-missing-type-argument = true
-incompatible-assignment = true
-
 [project.optional-dependencies]
 test = ["pytest>=7.0.0", "pytest-cov>=4.0.0"]
 # Note: dev dependencies are primarily managed via [dependency-groups] dev
 # This is kept for backward compatibility with tools that use optional-dependencies
-dev = ["ruff>=0.14.3", "mypy>=1.0.0"]
+dev = ["ruff>=0.14.3", "mypy>=1.0.0", "pyrefly"]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = ["ruff>=0.14.3", "mypy>=1.0.0"]
+dev = ["ruff>=0.14.3", "mypy>=1.0.0", "pyrefly"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
