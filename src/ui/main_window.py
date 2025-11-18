@@ -23,7 +23,7 @@ import numpy as np
 
 from core.experiment_manager import Experiment, ExperimentManager
 from core.data_analyzer import DataAnalyzer
-from core.image_processor import ImageProcessor
+from core.image_processor import ImageProcessor, AlignmentCancelledException
 from core.roi import ROI, ROIShape
 from utils.file_handler import ImageStackHandler
 from ui.image_viewer import ImageViewer
@@ -910,7 +910,7 @@ class MainWindow(QMainWindow):
                 )
             )
             
-            # Check if alignment was cancelled
+            # Check if alignment was cancelled (shouldn't reach here if cancelled, but double-check)
             if progress_dialog.is_cancelled():
                 progress_dialog.close()
                 QMessageBox.information(
@@ -979,6 +979,14 @@ class MainWindow(QMainWindow):
                 if load_reply == QMessageBox.Yes:
                     self.viewer.set_stack(output_dir)
             
+        except AlignmentCancelledException:
+            # Alignment was cancelled by user - this is expected, not an error
+            progress_dialog.close()
+            QMessageBox.information(
+                self,
+                "Alignment Cancelled",
+                "Image alignment was cancelled. No changes were saved."
+            )
         except Exception as e:
             progress_dialog.close()
             QMessageBox.critical(

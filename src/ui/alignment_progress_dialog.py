@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTextEdit,
 )
+from PySide6.QtGui import QCloseEvent
 
 
 class AlignmentProgressDialog(QDialog):
@@ -67,4 +68,11 @@ class AlignmentProgressDialog(QDialog):
         self.status_label.setText("Cancelling...")
         self.log_text.append("Cancellation requested by user.")
         super().reject()
+    
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Handle window close event (X button)."""
+        self._cancelled = True
+        self.status_label.setText("Cancelling...")
+        self.log_text.append("Cancellation requested by user.")
+        super().closeEvent(event)
 

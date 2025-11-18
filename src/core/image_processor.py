@@ -10,6 +10,11 @@ from core.experiment_manager import Experiment
 from core.roi import ROI, ROIShape
 
 
+class AlignmentCancelledException(Exception):
+    """Exception raised when image alignment is cancelled by the user."""
+    pass
+
+
 class ImageProcessor:
     def __init__(self, experiment: Experiment) -> None:
         self.experiment = experiment
@@ -342,7 +347,8 @@ class ImageProcessor:
         transform_const = transform_map.get(transform_type.lower(), StackReg.RIGID_BODY)
         
         if progress_callback:
-            progress_callback(0, num_frames, "Initializing StackReg...")
+            if not progress_callback(0, num_frames, "Initializing StackReg..."):
+                raise AlignmentCancelledException("Alignment cancelled by user")
         
         # Initialize StackReg
         sr = StackReg(transform_const)
@@ -356,6 +362,10 @@ class ImageProcessor:
         
         if global_range > 0:
             for i in range(num_frames):
+                # Check for cancellation during normalization
+                if progress_callback:
+                    if not progress_callback(i, num_frames, f"Normalizing frame {i+1}/{num_frames}..."):
+                        raise AlignmentCancelledException("Alignment cancelled by user")
                 image_stack_normalized[i] = ((image_stack[i].astype(np.float32) - global_min) / global_range) * 65535.0
         else:
             image_stack_normalized = image_stack.astype(np.float32)
@@ -365,13 +375,20 @@ class ImageProcessor:
         
         # Register to get transformation matrices
         if progress_callback:
-            progress_callback(0, num_frames, "Computing transformation matrices...")
+            if not progress_callback(0, num_frames, "Computing transformation matrices..."):
+                raise AlignmentCancelledException("Alignment cancelled by user")
         
         tmats = sr.register_stack(image_stack_uint16, reference=reference)
         
+        # Check for cancellation after registration
+        if progress_callback:
+            if not progress_callback(num_frames // 2, num_frames, "Transformation matrices computed..."):
+                raise AlignmentCancelledException("Alignment cancelled by user")
+        
         # Apply transformations
         if progress_callback:
-            progress_callback(0, num_frames, "Applying transformations...")
+            if not progress_callback(0, num_frames, "Applying transformations..."):
+                raise AlignmentCancelledException("Alignment cancelled by user")
         
         aligned_stack_uint16 = sr.transform_stack(image_stack_uint16, tmats=tmats)
         
@@ -381,6 +398,11 @@ class ImageProcessor:
         
         if global_range > 0:
             for i in range(num_frames):
+                # Check for cancellation during conversion
+                if progress_callback:
+                    if not progress_callback(i, num_frames, f"Converting frame {i+1}/{num_frames}..."):
+                        raise AlignmentCancelledException("Alignment cancelled by user")
+                
                 # Convert from uint16 (0-65535) back to original range
                 aligned_float = aligned_stack_uint16[i].astype(np.float32) / 65535.0
                 aligned_float = aligned_float * global_range + global_min
@@ -418,8 +440,10 @@ class ImageProcessor:
             else:
                 reference_frame = aligned_stack[0]
             
+            # Check for cancellation during confidence calculation
             if progress_callback:
-                progress_callback(i, num_frames, f"Calculating confidence for frame {i+1}/{num_frames}...")
+                if not progress_callback(i, num_frames, f"Calculating confidence for frame {i+1}/{num_frames}..."):
+                    raise AlignmentCancelledException("Alignment cancelled by user")
             
             # Convert to float32 for calculations
             ref_float = reference_frame.astype(np.float32)
@@ -435,7 +459,8 @@ class ImageProcessor:
             confidence_scores.append(confidence)
         
         if progress_callback:
-            progress_callback(num_frames, num_frames, "Alignment complete!")
+            if not progress_callback(num_frames, num_frames, "Alignment complete!"):
+                raise AlignmentCancelledException("Alignment cancelled by user")
         
         return aligned_stack, tmats, confidence_scores
 
